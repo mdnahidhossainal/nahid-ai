@@ -1,0 +1,8 @@
+{
+  "name": "Tamim",
+  "description": "A professional Real-time Voice Assistant application named 'Tamim', powered by Gemini 2.0 Multimodal Live API.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": []
+}
