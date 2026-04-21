@@ -76,9 +76,9 @@ export function useLiveSession() {
     setError(null);
     setIsMuted(false);
 
-    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY || process.env.API_KEY;
     if (!apiKey) {
-      setError("Gemini API Key missing (GEMINI_API_KEY).");
+      setError("Gemini API Key খুঁজে পাওয়া যায়নি। আপনি যদি এটি বাইরে (যেমন Netlify) হোস্ট করেন, তবে এনভায়রনমেন্ট ভেরিয়েবলে 'VITE_GEMINI_API_KEY' যুক্ত করুন।");
       setIsConnecting(false);
       return;
     }
