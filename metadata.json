@@ -1,8 +1,9 @@
 {
   "name": "Nahid AI",
-  "description": "A professional Native AI Voice Assistant named 'Nahid AI', developed for Mohammad Nahid. Powered by Google Gemini Live API.",
+  "description": "A professional Native AI Voice Assistant named 'Nahid AI', featuring a full 3D interactive Solar System exploration engine. Developed for Mohammad Nahid and powered by Google Gemini Live API.",
   "requestFramePermissions": [
-    "microphone"
+    "microphone",
+    "camera"
   ],
   "majorCapabilities": []
 }

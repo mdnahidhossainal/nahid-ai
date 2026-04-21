@@ -1,0 +1,56 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Stores user preferences and basic profile info.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "userName": { "type": "string" },
+        "nickName": { "type": "string" },
+        "assistantName": { "type": "string" },
+        "assistantVoice": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "userName"]
+    },
+    "Memory": {
+      "title": "AI Memory",
+      "description": "Long-term facts known about the user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "content": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "content", "timestamp"]
+    },
+    "ChatSession": {
+      "title": "Chat Session",
+      "description": "A single conversation session history.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "date": { "type": "string" },
+        "transcript": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "transcript"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "Individual user profiles."
+    },
+    "users/{userId}/memories/{memoryId}": {
+      "schema": "Memory",
+      "description": "Long-term memories associated with a user."
+    },
+    "users/{userId}/sessions/{sessionId}": {
+      "schema": "ChatSession",
+      "description": "Conversation history for a user."
+    }
+  }
+}

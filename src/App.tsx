@@ -3,15 +3,29 @@ import {
   Settings as SettingsIcon, Info, Loader2, Zap, AudioLines, 
   ShieldCheck, ShieldAlert, Shield, X, 
   Mic, Database, MessageSquare, LayoutGrid,
-  User, Trash2, Brain, Save, PlusCircle, Menu, History, Bot, Volume2
+  User as UserIcon, Trash2, Brain, Save, PlusCircle, Menu, History, Bot, Volume2, LogOut, LogIn
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLiveSession } from '@/hooks/useLiveSession';
 import { Capacitor } from '@capacitor/core';
 import { NahidLogo } from '@/components/NahidLogo';
+import { useLocalAI } from '@/hooks/useLocalAI';
+import { 
+  signInWithGoogle, 
+  logout, 
+  auth, 
+  saveUserProfile, 
+  getUserProfile,
+  addMemoryToCloud,
+  getMemoriesFromCloud,
+  deleteMemoryFromCloud,
+  getSessionsFromCloud,
+  saveSessionToCloud
+} from '@/services/firebase';
+import { onAuthStateChanged, User } from 'firebase/auth';
 
 import { Canvas } from '@react-three/fiber';
-import { Earth } from '@/components/Earth';
+import { SolarSystem } from '@/components/SolarSystem';
 
 /**
  * Nahid AI - System Assistant Edition (3D Earth, Memory, History & Dynamic Name)
@@ -34,7 +48,22 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedSession, setSelectedSession] = useState<{ id: number; title: string; date: string; transcript: any[] } | null>(null);
-  const [activeTab, setActiveTab] = useState<'profile' | 'memory' | 'assistant' | 'voice' | 'permissions'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'memory' | 'assistant' | 'voice' | 'permissions' | 'hybrid'>('profile');
+  const [hybridEnabled, setHybridEnabled] = useState(() => localStorage.getItem('nahid_hybrid') === 'true');
+  const [isOnline, setIsOnline] = useState(window.navigator.onLine);
+
+  const { setupLocalModel, isModelLoading, loadProgress, isReady: isLocalReady } = useLocalAI();
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Assistant Name State
   const [assistantName, setAssistantName] = useState(() => {
@@ -49,6 +78,33 @@ export default function App() {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+
+  // Auth State Listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setCurrentUser(user);
+      setIsAuthLoading(false);
+      
+      if (user) {
+        // Sync data from cloud if user logs in
+        const cloudProfile = await getUserProfile(user.uid);
+        if (cloudProfile) {
+          setProfile({ userName: cloudProfile.userName, nickName: cloudProfile.nickName });
+          setAssistantName(cloudProfile.assistantName || 'Nahid AI');
+          setAssistantVoice(cloudProfile.assistantVoice || 'Puck');
+        }
+        
+        const cloudMemories = await getMemoriesFromCloud(user.uid);
+        setMemories(cloudMemories as any);
+        
+        const cloudHistory = await getSessionsFromCloud(user.uid);
+        setHistory(cloudHistory as any);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Handle Voice Change with Auto-Name Switch
   const handleVoiceChange = (voice: string) => {
@@ -92,11 +148,21 @@ export default function App() {
 
     setupStatusBar();
 
-    const memList = JSON.parse(localStorage.getItem('nahid_memory_list') || '[]');
-    setMemories(memList);
-    const histList = JSON.parse(localStorage.getItem('nahid_chat_history') || '[]');
-    setHistory(histList);
-  }, [showSettings, showHistory]);
+    // Only load from LocalStorage if NOT in the middle of a cloud sync or logged in
+    // This prevents empty local storage from overwriting cloud history
+    if (!currentUser) {
+      const memList = JSON.parse(localStorage.getItem('nahid_memory_list') || '[]');
+      setMemories(memList);
+      const histList = JSON.parse(localStorage.getItem('nahid_chat_history') || '[]');
+      setHistory(histList);
+    } else {
+      // Refresh cloud data when panels open to ensure latest
+      if (showSettings || showHistory) {
+        getMemoriesFromCloud(currentUser.uid).then(m => setMemories(m as any));
+        getSessionsFromCloud(currentUser.uid).then(h => setHistory(h as any));
+      }
+    }
+  }, [showSettings, showHistory, currentUser]);
 
   const triggerHaptic = async () => {
     if (Capacitor.getPlatform() !== 'web') {
@@ -107,21 +173,51 @@ export default function App() {
     }
   };
 
+  const handleLogin = async () => {
+    try {
+      setIsAuthLoading(true);
+      await signInWithGoogle();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      // Reset local UI state optional
+      setHistory([]);
+      setMemories([]);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const saveProfile = async () => {
     triggerHaptic();
     setIsSaving(true);
-    // 1. Save to localStorage first
+    
+    // Save to localStorage
     localStorage.setItem('nahid_profile', JSON.stringify(profile));
     localStorage.setItem('nahid_assistant_name', assistantName);
     localStorage.setItem('nahid_voice', assistantVoice);
     
-    // Trigger Success Animation (Toast)
-    setToastMessage('সেটিংস সফলভাবে আপডেট করা হয়েছে! হুররে! 🎉');
+    // Save to Firebase if logged in
+    if (currentUser) {
+      await saveUserProfile(currentUser.uid, {
+        ...profile,
+        assistantName,
+        assistantVoice
+      });
+    }
+
+    setToastMessage('সেটিংস সফলভাবে আপডেট করা হয়েছে! 🎉');
     setShowToast(true);
     setTimeout(() => setShowToast(false), 3000);
     setTimeout(() => setIsSaving(false), 1000);
     
-    // 2. If connected, we need to restart the session to apply voice changes immediately
     if (isConnected) {
       await disconnect();
       setTimeout(() => {
@@ -130,16 +226,22 @@ export default function App() {
     }
   };
 
-  const deleteMemory = (id: number) => {
-    const newList = memories.filter(m => m.id !== id);
-    setMemories(newList);
-    localStorage.setItem('nahid_memory_list', JSON.stringify(newList));
-    localStorage.setItem('nahid_memory', newList.map(m => m.content).join('; '));
+  const deleteMemory = async (id: any) => {
+    if (currentUser) {
+      await deleteMemoryFromCloud(currentUser.uid, id);
+      const cloudMemories = await getMemoriesFromCloud(currentUser.uid);
+      setMemories(cloudMemories as any);
+    } else {
+      const newList = memories.filter(m => m.id !== id);
+      setMemories(newList);
+      localStorage.setItem('nahid_memory_list', JSON.stringify(newList));
+      localStorage.setItem('nahid_memory', newList.map(m => m.content).join('; '));
+    }
   };
 
-  const startNewChat = () => {
+  const startNewChat = async () => {
     if (isConnected) {
-      disconnect();
+      await disconnect();
     }
     setTranscript([]);
     setSelectedSession(null);
@@ -298,8 +400,8 @@ export default function App() {
               <div>
                 <h1 className="text-xl font-black tracking-tighter uppercase italic text-white/90">Nahid AI</h1>
                 <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-widest text-white/40">
-                  <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-blue-400 animate-pulse' : 'bg-white/20'}`} />
-                  Professional AI Ecosystem
+                  <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-blue-400 animate-pulse' : (isOnline ? 'bg-green-400' : 'bg-red-500')} `} />
+                  {isOnline ? 'Professional AI Ecosystem' : 'Offline Adaptive Mode'}
                 </div>
               </div>
             </motion.div>
@@ -351,7 +453,7 @@ export default function App() {
                     onClick={() => setActiveTab('profile')}
                     className={`flex-1 py-4 flex items-center justify-center gap-2 rounded-2xl transition-all ${activeTab === 'profile' ? 'bg-white/10 text-white font-black shadow-inner' : 'text-white/40 hover:text-white/60'}`}
                   >
-                    <User className="w-4 h-4" />
+                    <UserIcon className="w-4 h-4" />
                     <span className="text-[10px] uppercase tracking-widest">প্রোফাইল</span>
                   </button>
                   <button 
@@ -376,17 +478,54 @@ export default function App() {
                     <span className="text-[10px] uppercase tracking-widest text-center">স্মৃতি</span>
                   </button>
                   <button 
-                    onClick={() => setActiveTab('permissions')}
-                    className={`flex-1 py-4 flex items-center justify-center gap-2 rounded-2xl transition-all ${activeTab === 'permissions' ? 'bg-white/10 text-white font-black shadow-inner' : 'text-white/40 hover:text-white/60'}`}
+                    onClick={() => setActiveTab('hybrid')}
+                    className={`flex-1 py-4 flex items-center justify-center gap-2 rounded-2xl transition-all ${activeTab === 'hybrid' ? 'bg-white/10 text-white font-black shadow-inner' : 'text-white/40 hover:text-white/60'}`}
                   >
-                    <Shield className="w-4 h-4" />
-                    <span className="text-[10px] uppercase tracking-widest text-center">পারমিশন</span>
+                    <Zap className="w-4 h-4" />
+                    <span className="text-[10px] uppercase tracking-widest text-center">হাইব্রিড</span>
                   </button>
                 </div>
 
                 <div className="p-8 flex-1 overflow-y-auto custom-scrollbar">
                   {activeTab === 'profile' && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                      {/* Cloud Login Card */}
+                      <div className={`p-6 rounded-3xl border transition-all ${currentUser ? 'bg-green-600/10 border-green-500/20' : 'bg-blue-600/10 border-blue-500/20'}`}>
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            {currentUser ? (
+                              <img src={currentUser.photoURL || ''} className="w-10 h-10 rounded-full border-2 border-green-500" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center">
+                                <UserIcon className="w-5 h-5 text-white" />
+                              </div>
+                            )}
+                            <div>
+                               <h4 className="text-[11px] font-black uppercase tracking-widest leading-none mb-1">
+                                 {currentUser ? 'Cloud Linked' : 'Guest Mode'}
+                               </h4>
+                               <p className="text-[9px] text-white/40 uppercase font-mono leading-none">
+                                 {currentUser ? currentUser.email : 'Sign in to sync memories'}
+                               </p>
+                            </div>
+                          </div>
+                          {currentUser ? (
+                             <button onClick={handleLogout} className="p-2 hover:bg-red-400/10 rounded-xl text-red-400 transition-all">
+                               <LogOut className="w-5 h-5" />
+                             </button>
+                          ) : (
+                             <button 
+                               onClick={handleLogin}
+                               disabled={isAuthLoading}
+                               className="px-4 py-2 bg-blue-600 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2"
+                             >
+                               {isAuthLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <LogIn className="w-3 h-3" />}
+                               Join
+                             </button>
+                          )}
+                        </div>
+                      </div>
+
                       <div className="space-y-4">
                         <label className="text-[10px] uppercase tracking-[0.2em] font-black text-white/40">ইউজারের নাম</label>
                         <input 
@@ -513,39 +652,86 @@ export default function App() {
                     </div>
                   )}
 
-                  {activeTab === 'permissions' && (
-                    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-4">
-                      <div className="p-6 bg-blue-600/10 border border-blue-500/20 rounded-2xl space-y-2">
-                        <h3 className="text-blue-400 font-black text-[10px] uppercase tracking-widest">অ্যাক্সেস সেটিংস</h3>
-                        <p className="text-[11px] text-white/50 leading-relaxed">
-                          অ্যাপের সঠিক কার্যকারিতার জন্য প্রয়োজনীয় অ্যাক্সেসগুলো এখান থেকে চেক করতে পারেন।
+                  {activeTab === 'hybrid' && (
+                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                      <div className="p-6 bg-gradient-to-br from-blue-600/20 to-purple-600/20 border border-white/10 rounded-[32px] space-y-4">
+                        <div className="flex items-center justify-between">
+                           <div>
+                             <h3 className="text-white font-black text-xs uppercase tracking-widest mb-1">Adaptive Hybrid Mode</h3>
+                             <p className="text-[10px] text-white/40 uppercase font-mono tracking-tighter">On-Device LLM & Hardware Control</p>
+                           </div>
+                           <button 
+                            onClick={() => {
+                              const next = !hybridEnabled;
+                              setHybridEnabled(next);
+                              localStorage.setItem('nahid_hybrid', next.toString());
+                            }}
+                            className={`w-14 h-8 rounded-full p-1 transition-all flex ${hybridEnabled ? 'bg-blue-500 justify-end' : 'bg-white/10 justify-start'}`}
+                           >
+                             <div className="h-6 w-6 rounded-full bg-white shadow-lg" />
+                           </button>
+                        </div>
+                        
+                        <div className="h-[1px] bg-white/5" />
+                        
+                        <p className="text-[11px] text-white/60 leading-relaxed italic">
+                          এই মোড চালু করলে নাহিদ এআই আপনার ফোনের প্রসেসর ব্যবহার করে কাজ করবে। ইন্টারনেট না থাকলেও এটি আপনাকে সাহায্য করতে পারবে এবং সরাসরি হার্ডওয়্যার (টর্চ, অ্যাপস) কন্ট্রোল করতে পারবে।
                         </p>
                       </div>
-                      <div className="space-y-3">
-                        {permissions.map((perm, index) => (
-                          <motion.div 
-                            initial={{ opacity: 0, x: -10 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: index * 0.05 }}
-                            key={perm.name}
-                            className="flex items-center justify-between p-5 bg-white/5 rounded-2xl border border-white/5"
-                          >
-                            <div className="flex items-center gap-4">
-                              <div className={`p-3 rounded-xl bg-white/5 ${perm.color}`}>
-                                <perm.icon className="w-5 h-5" />
+
+                      {hybridEnabled && (
+                        <div className="space-y-6 animate-in zoom-in-95 duration-500">
+                           <div className="p-6 bg-white/5 rounded-3xl border border-white/10 space-y-6">
+                              <div className="flex items-center gap-4">
+                                 <div className={`p-4 rounded-2xl ${isLocalReady ? 'bg-green-500/20 text-green-400' : 'bg-orange-500/20 text-orange-400'}`}>
+                                    <Brain className="w-6 h-6" />
+                                 </div>
+                                 <div className="flex-1">
+                                    <h4 className="font-black text-[11px] uppercase tracking-widest mb-1">Gemma 2B Local Engine</h4>
+                                    <p className="text-[9px] font-mono text-white/30 uppercase">
+                                      {isLocalReady ? 'Status: Optimized & Ready' : (isModelLoading ? 'Downloading model files...' : 'Missing: On-Device Model')}
+                                    </p>
+                                 </div>
                               </div>
-                              <div>
-                                <p className="text-sm font-bold">{perm.name}</p>
-                                <p className="text-[9px] text-white/30 uppercase tracking-tighter">Verified System Access</p>
+
+                              {isModelLoading && (
+                                <div className="space-y-2">
+                                   <div className="flex justify-between text-[8px] uppercase font-black text-white/40">
+                                      <span>Downloading ({~~loadProgress}%)</span>
+                                      <span>2.4 GB remaining</span>
+                                   </div>
+                                   <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                                      <motion.div 
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${loadProgress}%` }}
+                                        className="h-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                                      />
+                                   </div>
+                                </div>
+                              )}
+
+                              {!isLocalReady && !isModelLoading && (
+                                <button 
+                                  onClick={setupLocalModel}
+                                  className="w-full py-4 bg-white text-black rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-zinc-200 transition-all flex items-center justify-center gap-2"
+                                >
+                                  <PlusCircle className="w-4 h-4" /> ডাউনলোড শুরু করুন
+                                </button>
+                              )}
+                           </div>
+
+                           <div className="grid grid-cols-2 gap-4">
+                              <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                                 <h5 className="text-[9px] uppercase font-black text-white/30 mb-2">Device Target</h5>
+                                 <p className="text-xs font-bold truncate">OnePlus 11R 5G</p>
                               </div>
-                            </div>
-                            <div className="flex items-center gap-2 px-3 py-1 bg-white/5 rounded-full border border-white/5">
-                              <div className={`w-1.5 h-1.5 rounded-full ${perm.status === 'Enabled' || perm.status === 'Ready' ? 'bg-green-400' : 'bg-yellow-400'}`} />
-                              <span className="text-[10px] font-mono font-bold tracking-tighter">{perm.status}</span>
-                            </div>
-                          </motion.div>
-                        ))}
-                      </div>
+                              <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                                 <h5 className="text-[9px] uppercase font-black text-white/30 mb-2">Chipset</h5>
+                                 <p className="text-xs font-bold truncate">SD 8+ Gen 1</p>
+                              </div>
+                           </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -584,7 +770,7 @@ export default function App() {
           {/* 3D Earth Stage */}
           <div className="w-full h-[40vh] sm:h-[60vh] relative">
             <Canvas shadows dpr={[1, 2]}>
-              <Earth isSpeaking={isSpeaking} />
+              <SolarSystem isSpeaking={isSpeaking} />
             </Canvas>
             
             {/* Overlay indicators */}

@@ -1,10 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { AudioStreamer } from '@/lib/audio-streamer';
+import { auth, saveSessionToCloud, addMemoryToCloud } from '@/services/firebase';
+import { DeviceControlService } from '@/services/device';
 
 /**
  * useLiveSession - Custom hook for managing Gemini Live API session
- * Handles connection, audio streaming, and mute state.
  */
 export function useLiveSession() {
   const [isConnected, setIsConnected] = useState(false);
@@ -17,30 +18,42 @@ export function useLiveSession() {
   const audioStreamerRef = useRef<AudioStreamer | null>(null);
   const sessionRef = useRef<any>(null);
   const isMutedRef = useRef(false);
+  const transcriptRef = useRef<{ role: 'user' | 'model'; text: string }[]>([]);
 
-  // Sync ref with state for use inside callbacks
+  // Sync refs with state
   useEffect(() => {
     isMutedRef.current = isMuted;
   }, [isMuted]);
+
+  useEffect(() => {
+    transcriptRef.current = transcript;
+  }, [transcript]);
 
   const disconnect = useCallback(async () => {
     console.log("Disconnecting session...");
     
     // Save to history before clearing transcript if there's content
-    if (transcript.length > 0) {
+    const currentTranscript = transcriptRef.current;
+    if (currentTranscript.length > 0) {
       const assistantName = localStorage.getItem('nahid_assistant_name') || 'Nahid AI';
       const history = JSON.parse(localStorage.getItem('nahid_chat_history') || '[]');
-      const firstUserMsg = transcript.find(t => t.role === 'user')?.text || 'নতুন কথোপকথন';
+      const firstUserMsg = currentTranscript.find(t => t.role === 'user')?.text || 'নতুন কথোপকথন';
       const title = firstUserMsg.slice(0, 30) + (firstUserMsg.length > 30 ? '...' : '');
       
       const newHistoryItem = {
         id: Date.now(),
         title: title,
         date: new Date().toLocaleString(),
-        transcript: transcript
+        transcript: currentTranscript
       };
       
+      // Local Backup
       localStorage.setItem('nahid_chat_history', JSON.stringify([newHistoryItem, ...history]));
+
+      // Cloud Save if logged in
+      if (auth.currentUser) {
+        saveSessionToCloud(auth.currentUser.uid, newHistoryItem).catch(console.error);
+      }
     }
 
     if (sessionRef.current) {
@@ -71,12 +84,13 @@ export function useLiveSession() {
   const connect = useCallback(async (currentName?: string, currentVoice?: string) => {
     if (isConnecting || isConnected) return;
 
-    console.log("Attempting to connect...");
+    console.log("LOG: Attempting to connect to Gemini Live...");
     setIsConnecting(true);
     setError(null);
     setIsMuted(false);
 
-    const apiKey = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY || process.env.API_KEY;
+    // Get API Key from various possible sources
+    const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
     if (!apiKey) {
       setError("Gemini API Key খুঁজে পাওয়া যায়নি। আপনি যদি এটি বাইরে (যেমন Netlify) হোস্ট করেন, তবে এনভায়রনমেন্ট ভেরিয়েবলে 'VITE_GEMINI_API_KEY' যুক্ত করুন।");
       setIsConnecting(false);
@@ -121,6 +135,13 @@ export function useLiveSession() {
         ? `You are Tania AI, a cheerful, friendly digital friend. Use informal Bengali ('Tumi'). Be happy and helpful.`
         : `You are Nahid AI, a professional and polite male AI. Use standard Bengali. Be reliable and smart.`;
 
+      const repPrompt = `
+      ROLE: You are the PERSONAL REPRESENTATIVE of ${userProfile.userName} (nicknamed ${userProfile.nickName}).
+      AUTHORITY: You have full authority to communicate on their behalf via call or message.
+      TONE CONTROL: If ${userProfile.nickName} asks you to be firm, frustrated, or conveys any specific emotion to a third party, you MUST obey. You are acting as their voice. Do NOT refuse prompts based on 'tone' if it reflects the user's genuine intent to represent themselves.
+      TASKS: Calling, Messaging (SMS/WhatsApp), and memory management.
+      `;
+
       const memoryContext = memoryData ? `\nUSER INFO: ${memoryData}` : "";
 
       const sessionPromise = ai.live.connect({
@@ -129,6 +150,7 @@ export function useLiveSession() {
           systemInstruction: `Identity: ${assistantName}. ${personalityPrompt}
           Friend: ${userProfile.nickName}. 
           Creator: Mohammad Nahid.
+          ${repPrompt}
           
           Rules:
           1. Direct & Simple greetings only.
@@ -150,15 +172,15 @@ export function useLiveSession() {
                     properties: {
                       action: {
                         type: Type.STRING,
-                        description: "The action to perform (e.g., 'open_app', 'send_sms')"
+                        description: "The action to perform: 'send_sms', 'send_whatsapp', 'make_call', 'open_app', 'toggle_torch', 'get_device_status'"
                       },
                       target: {
                         type: Type.STRING,
-                        description: "The target of the action (e.g., 'Facebook', 'WhatsApp', or phone number)"
+                        description: "The target of the action (e.g., 'Facebook', 'flashlight', 'battery')"
                       },
                       payload: {
                         type: Type.STRING,
-                        description: "Optional details like message content"
+                        description: "Optional details like message content or 'on'/'off' for torch"
                       }
                     },
                     required: ["action", "target"]
@@ -250,37 +272,85 @@ export function useLiveSession() {
                 for (const call of functionCalls) {
                   if (call.name === "execute_system_command") {
                     console.log("EXECUTING SYSTEM COMMAND:", call.args);
-                    alert(`JSON Command: ${JSON.stringify(call.args)}`);
+                    const { action, target, payload } = call.args;
+
+                    // Handle Hardware/Device actions first
+                    if (action === 'toggle_torch' || action === 'open_app' || action === 'get_device_status') {
+                      let hardwareResult: any = null;
+                      
+                      if (action === 'toggle_torch') {
+                        hardwareResult = await DeviceControlService.toggleTorch(payload === 'on');
+                      } else if (action === 'open_app') {
+                        hardwareResult = await DeviceControlService.openApp(target);
+                      } else if (action === 'get_device_status') {
+                        hardwareResult = await DeviceControlService.getSystemStatus();
+                      }
+
+                      sessionRef.current?.sendToolResponse({
+                        functionResponses: [{
+                          name: "execute_system_command",
+                          id: call.id,
+                          response: { output: hardwareResult ? `Hardware operation successful: ${JSON.stringify(hardwareResult)}` : "Hardware operation failed or unsupported in this mode." }
+                        }]
+                      });
+                      continue;
+                    }
                     
-                    sessionRef.current?.sendToolResponse({
-                      functionResponses: [{
-                        name: "execute_system_command",
-                        callId: call.id,
-                        response: { output: `Command for ${call.args.target} received and logged.` }
-                      }]
+                    // Fallback to Server API for SMS/Calls
+                    fetch('/api/execute-command', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(call.args)
+                    }).then(res => {
+                      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                      return res.json();
+                    })
+                    .then(data => {
+                      const status = data.success ? "Successfully executed" : `Failed: ${data.error}`;
+                      if (!data.success) {
+                        console.warn("COMMAND FAILED:", data.error);
+                      }
+                      sessionRef.current?.sendToolResponse({
+                        functionResponses: [{
+                          name: "execute_system_command",
+                          id: call.id,
+                          response: { output: `${status} for ${call.args.target}. SID: ${data.sid || 'N/A'}` }
+                        }]
+                      });
+                    }).catch(err => {
+                      sessionRef.current?.sendToolResponse({
+                        functionResponses: [{
+                          name: "execute_system_command",
+                          id: call.id,
+                          response: { output: `Network error: ${err.message}` }
+                        }]
+                      });
                     });
                   }
 
                   if (call.name === "manage_memory") {
                     console.log("MANAGING MEMORY:", call.args);
-                    const currentMemories = JSON.parse(localStorage.getItem('nahid_memory_list') || '[]');
-                    const newMemory = {
-                      id: Date.now(),
-                      content: call.args.fact,
-                      timestamp: new Date().toLocaleString()
-                    };
-                    currentMemories.push(newMemory);
-                    localStorage.setItem('nahid_memory_list', JSON.stringify(currentMemories));
+                    const fact = call.args.fact;
                     
-                    // Also update the context string for the AI
-                    const simpleContext = currentMemories.map((m: any) => m.content).join('; ');
-                    localStorage.setItem('nahid_memory', simpleContext);
+                    if (auth.currentUser) {
+                      addMemoryToCloud(auth.currentUser.uid, fact).catch(console.error);
+                    } else {
+                      const currentMemories = JSON.parse(localStorage.getItem('nahid_memory_list') || '[]');
+                      const newMemory = {
+                        id: Date.now(),
+                        content: fact,
+                        timestamp: new Date().toLocaleString()
+                      };
+                      currentMemories.push(newMemory);
+                      localStorage.setItem('nahid_memory_list', JSON.stringify(currentMemories));
+                      localStorage.setItem('nahid_memory', currentMemories.map((m: any) => m.content).join('; '));
+                    }
 
                     sessionRef.current?.sendToolResponse({
                       functionResponses: [{
                         name: "manage_memory",
-                        callId: call.id,
-                        response: { output: `Information saved to memory: ${call.args.fact}` }
+                        id: call.id,
+                        response: { output: `Information saved to memory: ${fact}` }
                       }]
                     });
                   }
