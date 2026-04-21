@@ -7,16 +7,15 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLiveSession } from '@/hooks/useLiveSession';
-import { Haptics, ImpactStyle } from '@capacitor/haptics';
-import { StatusBar, Style } from '@capacitor/status-bar';
+import { Capacitor } from '@capacitor/core';
 import { NahidLogo } from '@/components/NahidLogo';
 
 import { Canvas } from '@react-three/fiber';
 import { Earth } from '@/components/Earth';
 
 /**
- * Tamim AI - System Assistant Edition (3D Earth, Memory, History & Dynamic Name)
- * Mohammad Nahid Bhai Version
+ * Nahid AI - System Assistant Edition (3D Earth, Memory, History & Dynamic Name)
+ * Mohammad Nahid Version
  */
 export default function App() {
   const { 
@@ -39,12 +38,12 @@ export default function App() {
 
   // Assistant Name State
   const [assistantName, setAssistantName] = useState(() => {
-    return localStorage.getItem('tamim_assistant_name') || 'Nahid AI';
+    return localStorage.getItem('nahid_assistant_name') || 'Nahid AI';
   });
 
   // Assistant Voice State
   const [assistantVoice, setAssistantVoice] = useState(() => {
-    return localStorage.getItem('tamim_voice') || 'Puck';
+    return localStorage.getItem('nahid_voice') || 'Puck';
   });
 
   const [showToast, setShowToast] = useState(false);
@@ -63,7 +62,7 @@ export default function App() {
 
   // User Profile State
   const [profile, setProfile] = useState(() => {
-    const saved = localStorage.getItem('tamim_profile');
+    const saved = localStorage.getItem('nahid_profile');
     return saved ? JSON.parse(saved) : { userName: 'Mohammad Nahid', nickName: 'বন্ধু' };
   });
 
@@ -79,32 +78,42 @@ export default function App() {
     const timer = setTimeout(() => setShowSplash(false), 2500);
     
     // Native Status Bar Style
-    try {
-      StatusBar.setStyle({ style: Style.Dark });
-      StatusBar.setBackgroundColor({ color: '#000000' });
-    } catch (e) {
-      console.log('Native APIs not available in browser');
-    }
+    const setupStatusBar = async () => {
+      if (Capacitor.getPlatform() !== 'web') {
+        try {
+          const { StatusBar, Style } = await import('@capacitor/status-bar');
+          await StatusBar.setStyle({ style: Style.Dark });
+          await StatusBar.setBackgroundColor({ color: '#000000' });
+        } catch (e) {
+          console.log('Native Status Bar not available');
+        }
+      }
+    };
 
-    const memList = JSON.parse(localStorage.getItem('tamim_memory_list') || '[]');
+    setupStatusBar();
+
+    const memList = JSON.parse(localStorage.getItem('nahid_memory_list') || '[]');
     setMemories(memList);
-    const histList = JSON.parse(localStorage.getItem('tamim_chat_history') || '[]');
+    const histList = JSON.parse(localStorage.getItem('nahid_chat_history') || '[]');
     setHistory(histList);
   }, [showSettings, showHistory]);
 
   const triggerHaptic = async () => {
-    try {
-      await Haptics.impact({ style: ImpactStyle.Medium });
-    } catch (e) { }
+    if (Capacitor.getPlatform() !== 'web') {
+      try {
+        const { Haptics, ImpactStyle } = await import('@capacitor/haptics');
+        await Haptics.impact({ style: ImpactStyle.Medium });
+      } catch (e) { }
+    }
   };
 
   const saveProfile = async () => {
     triggerHaptic();
     setIsSaving(true);
     // 1. Save to localStorage first
-    localStorage.setItem('tamim_profile', JSON.stringify(profile));
-    localStorage.setItem('tamim_assistant_name', assistantName);
-    localStorage.setItem('tamim_voice', assistantVoice);
+    localStorage.setItem('nahid_profile', JSON.stringify(profile));
+    localStorage.setItem('nahid_assistant_name', assistantName);
+    localStorage.setItem('nahid_voice', assistantVoice);
     
     // Trigger Success Animation (Toast)
     setToastMessage('সেটিংস সফলভাবে আপডেট করা হয়েছে! হুররে! 🎉');
@@ -124,8 +133,8 @@ export default function App() {
   const deleteMemory = (id: number) => {
     const newList = memories.filter(m => m.id !== id);
     setMemories(newList);
-    localStorage.setItem('tamim_memory_list', JSON.stringify(newList));
-    localStorage.setItem('tamim_memory', newList.map(m => m.content).join('; '));
+    localStorage.setItem('nahid_memory_list', JSON.stringify(newList));
+    localStorage.setItem('nahid_memory', newList.map(m => m.content).join('; '));
   };
 
   const startNewChat = () => {
@@ -702,6 +711,3 @@ export default function App() {
     </div>
   );
 }
-
-
-

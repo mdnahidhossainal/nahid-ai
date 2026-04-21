@@ -28,8 +28,8 @@ export function useLiveSession() {
     
     // Save to history before clearing transcript if there's content
     if (transcript.length > 0) {
-      const assistantName = localStorage.getItem('tamim_assistant_name') || 'Nahid AI';
-      const history = JSON.parse(localStorage.getItem('tamim_chat_history') || '[]');
+      const assistantName = localStorage.getItem('nahid_assistant_name') || 'Nahid AI';
+      const history = JSON.parse(localStorage.getItem('nahid_chat_history') || '[]');
       const firstUserMsg = transcript.find(t => t.role === 'user')?.text || 'নতুন কথোপকথন';
       const title = firstUserMsg.slice(0, 30) + (firstUserMsg.length > 30 ? '...' : '');
       
@@ -40,7 +40,7 @@ export function useLiveSession() {
         transcript: transcript
       };
       
-      localStorage.setItem('tamim_chat_history', JSON.stringify([newHistoryItem, ...history]));
+      localStorage.setItem('nahid_chat_history', JSON.stringify([newHistoryItem, ...history]));
     }
 
     if (sessionRef.current) {
@@ -104,17 +104,17 @@ export function useLiveSession() {
       console.log("Initiating ai.live.connect call with gemini-3.1-flash-live-preview...");
       
       // Fetch memory context from localStorage with safety
-      const memoryData = localStorage.getItem('tamim_memory');
+      const memoryData = localStorage.getItem('nahid_memory');
       let userProfile = { userName: "Mohammad Nahid", nickName: "বন্ধু" };
       try {
-        const savedProfile = localStorage.getItem('tamim_profile');
+        const savedProfile = localStorage.getItem('nahid_profile');
         if (savedProfile) userProfile = JSON.parse(savedProfile);
       } catch (e) {
         console.error("Profile parse failed", e);
       }
 
-      const assistantName = currentName || localStorage.getItem('tamim_assistant_name') || 'Nahid AI';
-      const assistantVoice = currentVoice || localStorage.getItem('tamim_voice') || 'Puck';
+      const assistantName = currentName || localStorage.getItem('nahid_assistant_name') || 'Nahid AI';
+      const assistantVoice = currentVoice || localStorage.getItem('nahid_voice') || 'Puck';
       const isTania = assistantName.toLowerCase().includes('tania') || assistantVoice === 'Aoede' || assistantVoice === 'Kore';
       
       const personalityPrompt = isTania 
@@ -263,18 +263,18 @@ export function useLiveSession() {
 
                   if (call.name === "manage_memory") {
                     console.log("MANAGING MEMORY:", call.args);
-                    const currentMemories = JSON.parse(localStorage.getItem('tamim_memory_list') || '[]');
+                    const currentMemories = JSON.parse(localStorage.getItem('nahid_memory_list') || '[]');
                     const newMemory = {
                       id: Date.now(),
                       content: call.args.fact,
                       timestamp: new Date().toLocaleString()
                     };
                     currentMemories.push(newMemory);
-                    localStorage.setItem('tamim_memory_list', JSON.stringify(currentMemories));
+                    localStorage.setItem('nahid_memory_list', JSON.stringify(currentMemories));
                     
                     // Also update the context string for the AI
                     const simpleContext = currentMemories.map((m: any) => m.content).join('; ');
-                    localStorage.setItem('tamim_memory', simpleContext);
+                    localStorage.setItem('nahid_memory', simpleContext);
 
                     sessionRef.current?.sendToolResponse({
                       functionResponses: [{
