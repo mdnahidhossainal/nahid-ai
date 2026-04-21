@@ -610,12 +610,6 @@ export default function App() {
               )}
             </motion.button>
           </div>
-
-          <div className="flex gap-8 opacity-20 text-[9px] uppercase font-bold tracking-[0.25em]">
-            <span>Neural V3</span>
-            <span>PCM 24bit</span>
-            <span>Latency: 120ms</span>
-          </div>
         </footer>
       </div>
       <AnimatePresence>

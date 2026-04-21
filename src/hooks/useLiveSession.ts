@@ -101,11 +101,18 @@ export function useLiveSession() {
         }
       }, 25000);
 
-      console.log("Initiating ai.live.connect call with gemini-3.1-flash-live-preview...");
+      console.log("Initiating ai.live.connect call with gemini-2.0-flash-exp...");
       
-      // Fetch memory context from localStorage
+      // Fetch memory context from localStorage with safety
       const memoryData = localStorage.getItem('tamim_memory');
-      const userProfile = JSON.parse(localStorage.getItem('tamim_profile') || '{"userName": "Mohammad Nahid", "nickName": "বন্ধু"}');
+      let userProfile = { userName: "Mohammad Nahid", nickName: "বন্ধু" };
+      try {
+        const savedProfile = localStorage.getItem('tamim_profile');
+        if (savedProfile) userProfile = JSON.parse(savedProfile);
+      } catch (e) {
+        console.error("Profile parse failed", e);
+      }
+
       const assistantName = currentName || localStorage.getItem('tamim_assistant_name') || 'Tamim';
       const assistantVoice = currentVoice || localStorage.getItem('tamim_voice') || 'Puck';
       const isTania = assistantName.toLowerCase().includes('tania') || assistantVoice === 'Aoede' || assistantVoice === 'Kore';
@@ -123,7 +130,7 @@ export function useLiveSession() {
       const memoryContext = memoryData ? `\nMEMORY OF USER: ${memoryData}` : "";
 
       const sessionPromise = ai.live.connect({
-        model: "gemini-3.1-flash-live-preview", 
+        model: "gemini-2.0-flash-exp", 
         config: {
           systemInstruction: `You are ${assistantName}, a highly capable and intelligent System Assistant. 
           ${personalityPrompt}
@@ -330,12 +337,14 @@ export function useLiveSession() {
             clearTimeout(timeoutId);
             setIsConnected(false);
             setIsConnecting(false);
+            setError("সার্ভার থেকে সংযোগ বিচ্ছিন্ন হয়ে গেছে। আবার চেষ্টা করুন।");
             disconnect();
           },
           onerror: (err: any) => {
             console.error("LOG: Session error received:", err);
             clearTimeout(timeoutId);
-            setError(`সংযোগে সমস্যা: ${err.message || "Disconnected"}`);
+            const errorMsg = err.message || JSON.stringify(err);
+            setError(`সংযোগে সমস্যা: ${errorMsg}`);
             setIsConnecting(false);
             disconnect();
           }
