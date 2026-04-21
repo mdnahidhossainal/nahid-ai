@@ -610,6 +610,14 @@ export default function App() {
               )}
             </motion.button>
           </div>
+          
+          {/* Footer Branding */}
+          <div className="mt-8 flex flex-col items-center gap-2">
+            <div className="h-px w-12 bg-white/10" />
+            <p className="text-white/30 text-[10px] uppercase tracking-[0.4em] font-medium">
+              Created by <span className="text-white/60 font-bold">Nahid AI</span>
+            </p>
+          </div>
         </footer>
       </div>
       <AnimatePresence>
