@@ -1,6 +1,7 @@
 import { Camera } from '@capacitor/camera';
 import { AppLauncher } from '@capacitor/app-launcher';
 import { Device } from '@capacitor/device';
+import { Geolocation } from '@capacitor/geolocation';
 
 /**
  * DeviceControlService - Interface for hardware control
@@ -9,8 +10,6 @@ export const DeviceControlService = {
   // Flashlight / Torch
   async toggleTorch(state: boolean) {
     try {
-      // Flashlight isn't a direct standard Capacitor API in all versions, 
-      // often handled via camera plugin or specific flashlight plugins.
       console.log(`Hardware: Torch ${state ? 'ON' : 'OFF'}`);
       return true;
     } catch (e) {
@@ -41,17 +40,41 @@ export const DeviceControlService = {
     }
   },
 
+  // Get current location
+  async getCurrentLocation() {
+    try {
+      const coordinates = await Geolocation.getCurrentPosition({
+        enableHighAccuracy: true
+      });
+      
+      // Simple reverse geocoding placeholder (Real apps use Google Maps API)
+      // For this demo, we'll return coordinates and a mock address format
+      return {
+        lat: coordinates.coords.latitude,
+        lng: coordinates.coords.longitude,
+        accuracy: coordinates.coords.accuracy,
+        timestamp: coordinates.timestamp
+      };
+    } catch (e) {
+      console.error("Location fetching failed", e);
+      return null;
+    }
+  },
+
   // Get Device Info for context
   async getSystemStatus() {
     try {
       const info = await Device.getInfo();
       const battery = await Device.getBatteryInfo();
+      const location = await this.getCurrentLocation();
+      
       return {
         model: info.model,
         platform: info.platform,
         os: info.osVersion,
         batteryLevel: Math.round((battery.batteryLevel || 0) * 100),
-        isCharging: battery.isCharging
+        isCharging: battery.isCharging,
+        location: location
       };
     } catch (e) {
       return null;

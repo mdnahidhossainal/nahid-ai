@@ -25,7 +25,7 @@ import {
 import { onAuthStateChanged, User } from 'firebase/auth';
 
 import { Canvas } from '@react-three/fiber';
-import { SolarSystem } from '@/components/SolarSystem';
+import { HolographicHorse } from '@/components/HolographicHorse';
 
 /**
  * Nahid AI - System Assistant Edition (3D Earth, Memory, History & Dynamic Name)
@@ -128,6 +128,63 @@ export default function App() {
   // History State
   const [history, setHistory] = useState<{ id: number; title: string; date: string; transcript: any[] }[]>([]);
   const [showSplash, setShowSplash] = useState(true);
+  const [isLocationSharing, setIsLocationSharing] = useState(() => localStorage.getItem('nahid_location_sharing') === 'true');
+  const [currentLocation, setCurrentLocation] = useState<any>(null);
+
+  useEffect(() => {
+    let watcherId: string | null = null;
+    
+    const startTracking = async () => {
+      try {
+        const { Geolocation } = await import('@capacitor/geolocation');
+        watcherId = await Geolocation.watchPosition({
+          enableHighAccuracy: true,
+          timeout: 10000
+        }, (position, err) => {
+          if (position) {
+            setCurrentLocation({
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+              timestamp: position.timestamp
+            });
+            
+            // If connected and sharing is on, we'll feed this to Gemini eventually
+            // but we don't want to spam realtimeInput. 
+            // We'll let the AI ask via tool or send a context update periodically.
+          }
+        });
+      } catch (e) {
+        console.error("Location tracking setup failed", e);
+      }
+    };
+
+    if (isLocationSharing) {
+      startTracking();
+    }
+
+    return () => {
+      if (watcherId) {
+        import('@capacitor/geolocation').then(({ Geolocation }) => {
+          Geolocation.clearWatch({ id: watcherId! });
+        });
+      }
+    };
+  }, [isLocationSharing]);
+
+  // Periodic location context update to Gemini
+  useEffect(() => {
+    if (isConnected && isLocationSharing && currentLocation) {
+      const interval = setInterval(() => {
+        // We use a non-speaking realtime input just to update context
+        // Note: In some SDK versions, this might trigger a response.
+        // For Nahid AI, we'll assume the model is instructed to handle 'CONTEXT_UPDATE' silently unless important.
+        const contextMsg = `[CONTEXT_UPDATE] User current location: Latitude ${currentLocation.lat}, Longitude ${currentLocation.lng}. Timestamp: ${new Date(currentLocation.timestamp).toLocaleTimeString()}`;
+        console.log("Sending location context update to Gemini...");
+        // Here we just keep it available for the TOOL CALL when the AI asks "Where are you?"
+      }, 60000); // Only every minute to save battery/token
+      return () => clearInterval(interval);
+    }
+  }, [isConnected, isLocationSharing, currentLocation]);
 
   useEffect(() => {
     // Hide splash after 2.5s
@@ -251,7 +308,7 @@ export default function App() {
   const permissions = [
     { name: 'Microphone', icon: Mic, status: 'Enabled', color: 'text-green-400' },
     { name: 'Storage Access', icon: Database, status: 'Enabled', color: 'text-green-400' },
-    { name: 'SMS Control', icon: MessageSquare, status: 'Ready', color: 'text-blue-400' },
+    { name: 'Live Location', icon: Shield, status: isLocationSharing ? 'Tracking' : 'Off', color: isLocationSharing ? 'text-blue-400' : 'text-white/20' },
     { name: 'App Control', icon: LayoutGrid, status: 'Standby', color: 'text-cyan-400' },
   ];
 
@@ -484,6 +541,13 @@ export default function App() {
                     <Zap className="w-4 h-4" />
                     <span className="text-[10px] uppercase tracking-widest text-center">হাইব্রিড</span>
                   </button>
+                  <button 
+                    onClick={() => setActiveTab('permissions')}
+                    className={`flex-1 py-4 flex items-center justify-center gap-2 rounded-2xl transition-all ${activeTab === 'permissions' ? 'bg-white/10 text-white font-black shadow-inner' : 'text-white/40 hover:text-white/60'}`}
+                  >
+                    <Shield className="w-4 h-4" />
+                    <span className="text-[10px] uppercase tracking-widest text-center">অনুমতি</span>
+                  </button>
                 </div>
 
                 <div className="p-8 flex-1 overflow-y-auto custom-scrollbar">
@@ -652,6 +716,44 @@ export default function App() {
                     </div>
                   )}
 
+                   {activeTab === 'permissions' && (
+                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                      <div className="p-6 bg-blue-600/10 border border-blue-500/20 rounded-2xl space-y-4">
+                        <div className="flex items-center justify-between">
+                           <div>
+                             <h4 className="font-black text-[11px] uppercase tracking-widest mb-1">Live Location Tracking</h4>
+                             <p className="text-[9px] text-white/40 uppercase font-mono tracking-tighter">Real-time Movement Awareness</p>
+                           </div>
+                           <button 
+                             onClick={() => {
+                               const next = !isLocationSharing;
+                               setIsLocationSharing(next);
+                               localStorage.setItem('nahid_location_sharing', next.toString());
+                             }}
+                             className={`w-12 h-7 rounded-full p-1 transition-all flex ${isLocationSharing ? 'bg-blue-500 justify-end' : 'bg-white/10 justify-start'}`}
+                           >
+                             <div className="h-5 w-5 rounded-full bg-white shadow-lg" />
+                           </button>
+                        </div>
+                        <p className="text-[11px] text-white/50 italic leading-relaxed">
+                          এটি চালু থাকলে নাহিদ এআই সবসময় জানবে আপনি কোথায় আছেন এবং আপনার গতিবিধি অনুযায়ী রিয়েল-টাইম আপডেট দিতে পারবে।
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4">
+                        {permissions.map((p, i) => (
+                          <div key={i} className="p-4 bg-white/5 rounded-2xl border border-white/5 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <p.icon className={`w-5 h-5 ${p.color}`} />
+                              <span className="text-[11px] font-bold text-white/80">{p.name}</span>
+                            </div>
+                            <span className={`text-[9px] font-black uppercase tracking-widest ${p.color}`}>{p.status}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {activeTab === 'hybrid' && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                       <div className="p-6 bg-gradient-to-br from-blue-600/20 to-purple-600/20 border border-white/10 rounded-[32px] space-y-4">
@@ -767,10 +869,10 @@ export default function App() {
             )}
           </AnimatePresence>
 
-          {/* 3D Earth Stage */}
-          <div className="w-full h-[40vh] sm:h-[60vh] relative">
+          {/* 3D Model Stage */}
+          <div className="w-full h-[50vh] sm:h-[65vh] relative">
             <Canvas shadows dpr={[1, 2]}>
-              <SolarSystem isSpeaking={isSpeaking} />
+              <HolographicHorse isSpeaking={isSpeaking} />
             </Canvas>
             
             {/* Overlay indicators */}

@@ -172,7 +172,7 @@ export function useLiveSession() {
                     properties: {
                       action: {
                         type: Type.STRING,
-                        description: "The action to perform: 'send_sms', 'send_whatsapp', 'make_call', 'open_app', 'toggle_torch', 'get_device_status'"
+                        description: "The action to perform: 'send_sms', 'send_whatsapp', 'make_call', 'open_app', 'toggle_torch', 'get_device_status', 'get_location'"
                       },
                       target: {
                         type: Type.STRING,
@@ -275,7 +275,7 @@ export function useLiveSession() {
                     const { action, target, payload } = call.args;
 
                     // Handle Hardware/Device actions first
-                    if (action === 'toggle_torch' || action === 'open_app' || action === 'get_device_status') {
+                    if (action === 'toggle_torch' || action === 'open_app' || action === 'get_device_status' || action === 'get_location') {
                       let hardwareResult: any = null;
                       
                       if (action === 'toggle_torch') {
@@ -284,13 +284,15 @@ export function useLiveSession() {
                         hardwareResult = await DeviceControlService.openApp(target);
                       } else if (action === 'get_device_status') {
                         hardwareResult = await DeviceControlService.getSystemStatus();
+                      } else if (action === 'get_location') {
+                        hardwareResult = await DeviceControlService.getCurrentLocation();
                       }
 
                       sessionRef.current?.sendToolResponse({
                         functionResponses: [{
                           name: "execute_system_command",
                           id: call.id,
-                          response: { output: hardwareResult ? `Hardware operation successful: ${JSON.stringify(hardwareResult)}` : "Hardware operation failed or unsupported in this mode." }
+                          response: { output: hardwareResult ? `Operation successful: ${JSON.stringify(hardwareResult)}` : "Operation failed or permission denied." }
                         }]
                       });
                       continue;
