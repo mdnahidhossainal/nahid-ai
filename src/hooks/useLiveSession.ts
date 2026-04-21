@@ -28,7 +28,7 @@ export function useLiveSession() {
     
     // Save to history before clearing transcript if there's content
     if (transcript.length > 0) {
-      const assistantName = localStorage.getItem('tamim_assistant_name') || 'Tamim';
+      const assistantName = localStorage.getItem('tamim_assistant_name') || 'Nahid AI';
       const history = JSON.parse(localStorage.getItem('tamim_chat_history') || '[]');
       const firstUserMsg = transcript.find(t => t.role === 'user')?.text || 'নতুন কথোপকথন';
       const title = firstUserMsg.slice(0, 30) + (firstUserMsg.length > 30 ? '...' : '');
@@ -113,13 +113,13 @@ export function useLiveSession() {
         console.error("Profile parse failed", e);
       }
 
-      const assistantName = currentName || localStorage.getItem('tamim_assistant_name') || 'Tamim';
+      const assistantName = currentName || localStorage.getItem('tamim_assistant_name') || 'Nahid AI';
       const assistantVoice = currentVoice || localStorage.getItem('tamim_voice') || 'Puck';
       const isTania = assistantName.toLowerCase().includes('tania') || assistantVoice === 'Aoede' || assistantVoice === 'Kore';
       
       const personalityPrompt = isTania 
-        ? `You are Tania, a cheerful, friendly digital friend. Use informal Bengali ('Tumi'). Be happy and helpful.`
-        : `You are Tamim, a professional and polite male AI. Use standard Bengali. Be reliable and smart.`;
+        ? `You are Tania AI, a cheerful, friendly digital friend. Use informal Bengali ('Tumi'). Be happy and helpful.`
+        : `You are Nahid AI, a professional and polite male AI. Use standard Bengali. Be reliable and smart.`;
 
       const memoryContext = memoryData ? `\nUSER INFO: ${memoryData}` : "";
 
@@ -318,6 +318,12 @@ export function useLiveSession() {
             setIsConnected(false);
             setIsConnecting(false);
             
+            // IGNORE clean/intentional closes
+            if (event?.code === 1000 || event?.code === 1005) {
+              console.log("Clean disconnect, not setting error.");
+              return;
+            }
+
             // Provide more technical info to help debugging
             const code = event?.code || "1006";
             const reason = event?.reason || "অজানা কারণ (Unknown)";

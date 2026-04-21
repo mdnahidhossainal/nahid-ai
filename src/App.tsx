@@ -7,6 +7,9 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLiveSession } from './hooks/useLiveSession';
+import { Haptics, ImpactStyle } from '@capacitor/haptics';
+import { StatusBar, Style } from '@capacitor/status-bar';
+import { NahidLogo } from './components/NahidLogo';
 
 import { Canvas } from '@react-three/fiber';
 import { Earth } from './components/Earth';
@@ -36,7 +39,7 @@ export default function App() {
 
   // Assistant Name State
   const [assistantName, setAssistantName] = useState(() => {
-    return localStorage.getItem('tamim_assistant_name') || 'Tamim';
+    return localStorage.getItem('tamim_assistant_name') || 'Nahid AI';
   });
 
   // Assistant Voice State
@@ -52,9 +55,9 @@ export default function App() {
   const handleVoiceChange = (voice: string) => {
     setAssistantVoice(voice);
     if (voice === 'Puck') {
-      setAssistantName('Tamim');
+      setAssistantName('Nahid AI');
     } else if (voice === 'Aoede' || voice === 'Kore') {
-      setAssistantName('Tania');
+      setAssistantName('Tania AI');
     }
   };
 
@@ -69,15 +72,34 @@ export default function App() {
   
   // History State
   const [history, setHistory] = useState<{ id: number; title: string; date: string; transcript: any[] }[]>([]);
+  const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
+    // Hide splash after 2.5s
+    const timer = setTimeout(() => setShowSplash(false), 2500);
+    
+    // Native Status Bar Style
+    try {
+      StatusBar.setStyle({ style: Style.Dark });
+      StatusBar.setBackgroundColor({ color: '#000000' });
+    } catch (e) {
+      console.log('Native APIs not available in browser');
+    }
+
     const memList = JSON.parse(localStorage.getItem('tamim_memory_list') || '[]');
     setMemories(memList);
     const histList = JSON.parse(localStorage.getItem('tamim_chat_history') || '[]');
     setHistory(histList);
   }, [showSettings, showHistory]);
 
+  const triggerHaptic = async () => {
+    try {
+      await Haptics.impact({ style: ImpactStyle.Medium });
+    } catch (e) { }
+  };
+
   const saveProfile = async () => {
+    triggerHaptic();
     setIsSaving(true);
     // 1. Save to localStorage first
     localStorage.setItem('tamim_profile', JSON.stringify(profile));
@@ -123,8 +145,46 @@ export default function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#05050a] text-white font-sans selection:bg-blue-500/30 overflow-hidden flex flex-col relative text-[14px]">
-      
+    <div className="min-h-screen bg-black text-white font-sans selection:bg-blue-500/30 overflow-hidden flex flex-col relative text-[14px]">
+      <AnimatePresence mode="wait">
+        {showSplash && (
+          <motion.div
+            key="native-splash"
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0, scale: 1.1, transition: { duration: 0.8, ease: [0.16, 1, 0.3, 1] } }}
+            className="fixed inset-0 z-[1000] bg-black flex flex-col items-center justify-center p-8"
+          >
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ duration: 1.2, ease: "easeOut" }}
+              className="relative flex flex-col items-center"
+            >
+              <NahidLogo className="w-48 h-48 sm:w-64 sm:h-64 mb-8" />
+              <motion.div 
+                initial={{ width: 0 }}
+                animate={{ width: "100%" }}
+                transition={{ delay: 0.5, duration: 1.5 }}
+                className="h-[2px] bg-gradient-to-r from-transparent via-blue-500 to-transparent absolute bottom-0 left-0"
+              />
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 1 }}
+              className="mt-12 text-center"
+            >
+              <h2 className="text-3xl font-black tracking-[0.4em] uppercase italic text-white/90">Nahid AI</h2>
+              <p className="text-[10px] uppercase font-bold tracking-[0.6em] text-white/30 mt-4">Intelligence Evolution</p>
+            </motion.div>
+            <div className="absolute bottom-12 left-1/2 -translate-x-1/2 flex items-center gap-3">
+              <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
+              <span className="text-[8px] uppercase tracking-[0.3em] font-black text-white/20">Securely Loading...</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Space Background */}
       <div className="fixed inset-0 z-0">
         <div className="absolute top-1/4 left-1/3 w-[800px] h-[800px] bg-blue-600/5 rounded-full blur-[180px] animate-pulse" />
@@ -227,10 +287,10 @@ export default function App() {
                 <Zap className={`w-6 h-6 ${isConnected ? 'text-blue-400 fill-blue-400' : 'text-white/20'}`} />
               </div>
               <div>
-                <h1 className="text-xl font-black tracking-tighter uppercase italic text-white/90">{assistantName} System</h1>
+                <h1 className="text-xl font-black tracking-tighter uppercase italic text-white/90">Nahid AI</h1>
                 <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-widest text-white/40">
                   <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-blue-400 animate-pulse' : 'bg-white/20'}`} />
-                  Created by Mohammad Nahid
+                  Professional AI Ecosystem
                 </div>
               </div>
             </motion.div>
@@ -359,7 +419,7 @@ export default function App() {
                           type="text" 
                           value={assistantName}
                           onChange={(e) => setAssistantName(e.target.value)}
-                          placeholder="EX: Tamim or Jarvis"
+                          placeholder="EX: Nahid AI or Jarvis"
                           className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 outline-none focus:border-blue-500/50 transition-all font-bold text-blue-400"
                         />
                       </div>
@@ -390,8 +450,8 @@ export default function App() {
                             <Volume2 className="w-6 h-6" />
                           </div>
                           <div className="text-center">
-                            <span className="block font-black text-[11px] uppercase tracking-widest text-blue-400">Tamim</span>
-                            <span className="text-[9px] text-white/30 uppercase font-mono tracking-tighter">Male Voice (Puck)</span>
+                            <span className="block font-black text-[11px] uppercase tracking-widest text-blue-400">Nahid AI (Male)</span>
+                            <span className="text-[9px] text-white/30 uppercase font-mono tracking-tighter">Professional Voice</span>
                           </div>
                         </button>
 
@@ -403,8 +463,8 @@ export default function App() {
                             <Volume2 className="w-6 h-6" />
                           </div>
                           <div className="text-center">
-                            <span className="block font-black text-[11px] uppercase tracking-widest text-pink-400">Tania</span>
-                            <span className="text-[9px] text-white/30 uppercase font-mono tracking-tighter">Youthful Voice (Aoede)</span>
+                            <span className="block font-black text-[11px] uppercase tracking-widest text-pink-400">Tania AI (Female)</span>
+                            <span className="text-[9px] text-white/30 uppercase font-mono tracking-tighter">Youthful Voice</span>
                           </div>
                         </button>
                       </div>
@@ -543,7 +603,7 @@ export default function App() {
               {isConnecting 
                 ? "সংযুক্ত হচ্ছে..." 
                 : isConnected 
-                  ? (isMuted ? "গোপনীয়তা মোড সক্রিয়" : (isSpeaking ? "তামিম বলছে..." : "আমি শুনছি দস্তো...")) 
+                  ? (isMuted ? "গোপনীয়তা মোড সক্রিয়" : (isSpeaking ? `${assistantName} বলছে...` : "আমি শুনছি দস্তো...")) 
                   : `হাই, আমি ${assistantName}`}
             </h2>
             
@@ -552,7 +612,7 @@ export default function App() {
                 ? <span className="text-red-400 font-bold">{error}। দয়া করে পেজটি রিফ্রেশ করে আবার চেষ্টা করুন।</span>
                 : (isConnected 
                     ? (isMuted 
-                        ? "তামিম এখন আপনার কথা শুনছে না। যখন আপনি কথা বলতে চাইবেন, মিউট বন্ধ করুন।" 
+                        ? `${assistantName} এখন আপনার কথা শুনছে না। যখন আপনি কথা বলতে চাইবেন, মিউট বন্ধ করুন।` 
                         : "আমি আপনার কথা শোনার জন্য তৈরি। যেকোনো কিছু জিজ্ঞেস করতে পারেন।")
                     : "আপনার পূর্ণাঙ্গ সিস্টেম অ্যাসিস্ট্যান্টের সাথে কথা বলতে নিচে ক্লিক করুন।")
               }
@@ -593,7 +653,10 @@ export default function App() {
             <motion.button
               whileHover={{ scale: isConnecting ? 1 : 1.02 }}
               whileTap={{ scale: isConnecting ? 1 : 0.98 }}
-              onClick={isConnected ? disconnect : () => connect()}
+              onClick={() => {
+                triggerHaptic();
+                isConnected ? disconnect() : connect();
+              }}
               disabled={isConnecting}
               className={`relative flex-1 py-5 sm:py-6 rounded-[28px] font-black text-[11px] sm:text-[12px] uppercase tracking-[0.2em] sm:tracking-[0.3em] transition-all flex items-center justify-center gap-4 cursor-pointer shadow-2xl ${
                 isConnected 
@@ -609,14 +672,6 @@ export default function App() {
                 <>{assistantName} চালু করুন</>
               )}
             </motion.button>
-          </div>
-          
-          {/* Footer Branding */}
-          <div className="mt-8 flex flex-col items-center gap-2">
-            <div className="h-px w-12 bg-white/10" />
-            <p className="text-white/30 text-[10px] uppercase tracking-[0.4em] font-medium">
-              Created by <span className="text-white/60 font-bold">Nahid AI</span>
-            </p>
           </div>
         </footer>
       </div>
@@ -638,7 +693,7 @@ export default function App() {
               <PlusCircle className="w-4 h-4 fill-white" />
             </div>
             <div className="flex flex-col">
-              <span className="text-[10px] opacity-60 leading-none mb-1">System Update</span>
+              <span className="text-[10px] opacity-60 leading-none mb-1">Nahid AI Update</span>
               <span>{toastMessage}</span>
             </div>
           </motion.div>
