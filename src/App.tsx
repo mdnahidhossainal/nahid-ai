@@ -513,7 +513,7 @@ export default function App() {
           </AnimatePresence>
 
           {/* 3D Earth Stage */}
-          <div className="w-full h-[60vh] relative">
+          <div className="w-full h-[40vh] sm:h-[60vh] relative">
             <Canvas shadows dpr={[1, 2]}>
               <Earth isSpeaking={isSpeaking} />
             </Canvas>
@@ -535,77 +535,67 @@ export default function App() {
             </div>
           </div>
 
-          {/* Privacy/Mute Pulsing Toggle (The Big Button requested by user) */}
-          <AnimatePresence>
-            {isConnected && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 20 }}
-                className="absolute bottom-32 flex flex-col items-center gap-3 relative z-30"
-              >
-                <div className="relative">
-                  <motion.div
-                    animate={{ scale: isMuted ? [1, 1.1, 1] : 1, opacity: isMuted ? [0.2, 0.4, 0.2] : 0 }}
-                    transition={{ duration: 2, repeat: Infinity }}
-                    className="absolute inset-0 bg-orange-500 rounded-full blur-xl"
-                  />
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={toggleMute}
-                    className={`w-28 h-28 rounded-full shadow-2xl flex flex-col items-center justify-center gap-2 transition-all duration-500 border-2 relative z-10 cursor-pointer ${
-                      isMuted 
-                      ? 'bg-orange-500/10 border-orange-500 text-orange-400' 
-                      : 'bg-white/5 border-white/20 text-white/60 hover:border-white/40'
-                    }`}
-                  >
-                    {isMuted ? (
-                      <ShieldAlert className="w-8 h-8" />
-                    ) : (
-                      <ShieldCheck className="w-8 h-8 opacity-40" />
-                    )}
-                    <span className="text-[10px] font-black uppercase tracking-tighter">
-                      {isMuted ? "Muted" : "Privacy"}
-                    </span>
-                  </motion.button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {/* Privacy/Mute Pulsing Toggle - REMOVED from center */}
 
           {/* Text Feedback */}
-          <div className="mt-4 text-center space-y-4 max-w-sm relative z-20">
-            <h2 className="text-4xl font-black tracking-tighter leading-tight bg-clip-text text-transparent bg-gradient-to-b from-white to-white/50">
+          <div className="mt-8 text-center space-y-4 max-w-sm relative z-20 pb-12 sm:pb-0">
+            <h2 className="text-3xl sm:text-4xl font-black tracking-tighter leading-tight bg-clip-text text-transparent bg-gradient-to-b from-white to-white/50 px-4">
               {isConnecting 
                 ? "সংযুক্ত হচ্ছে..." 
                 : isConnected 
                   ? (isMuted ? "গোপনীয়তা মোড সক্রিয়" : (isSpeaking ? "তামিম বলছে..." : "আমি শুনছি দস্তো...")) 
-                  : "হাই, আমি তামিম"}
+                  : `হাই, আমি ${assistantName}`}
             </h2>
             
-            <p className="text-white/40 text-sm leading-relaxed px-4 min-h-[3rem]">
+            <p className="text-white/40 text-[12px] sm:text-sm leading-relaxed px-6 min-h-[3rem]">
               {error 
                 ? <span className="text-red-400 font-bold">{error}। দয়া করে পেজটি রিফ্রেশ করে আবার চেষ্টা করুন।</span>
                 : (isConnected 
                     ? (isMuted 
                         ? "তামিম এখন আপনার কথা শুনছে না। যখন আপনি কথা বলতে চাইবেন, মিউট বন্ধ করুন।" 
                         : "আমি আপনার কথা শোনার জন্য তৈরি। যেকোনো কিছু জিজ্ঞেস করতে পারেন।")
-                    : "আপনার পূর্ণাঙ্গ সিস্টেম অ্যাসিস্ট্যান্ট তামিমের সাথে কথা বলতে নিচে ক্লিক করুন।")
+                    : "আপনার পূর্ণাঙ্গ সিস্টেম অ্যাসিস্ট্যান্টের সাথে কথা বলতে নিচে ক্লিক করুন।")
               }
             </p>
           </div>
         </main>
 
         {/* Global Control Bar */}
-        <footer className="p-12 flex flex-col items-center gap-8 bg-gradient-to-t from-black/40 to-transparent">
-          <div className="w-full max-w-sm">
+        <footer className="p-6 sm:p-12 flex flex-col items-center gap-6 bg-gradient-to-t from-black/60 to-transparent">
+          <div className="w-full max-w-sm flex items-center gap-3">
+            {/* New Location for Mute Toggle */}
+            <AnimatePresence>
+              {isConnected && (
+                <motion.button
+                  initial={{ opacity: 0, x: -20, scale: 0.8 }}
+                  animate={{ opacity: 1, x: 0, scale: 1 }}
+                  exit={{ opacity: 0, x: -20, scale: 0.8 }}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={toggleMute}
+                  className={`flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 rounded-3xl border-2 flex items-center justify-center transition-all duration-500 relative overflow-hidden ${
+                    isMuted 
+                    ? 'bg-orange-500/10 border-orange-500 text-orange-400' 
+                    : 'bg-white/5 border-white/20 text-white/40 hover:border-white/40'
+                  }`}
+                >
+                  {isMuted ? <ShieldAlert className="w-7 h-7 sm:w-8 sm:h-8" /> : <ShieldCheck className="w-7 h-7 sm:w-8 sm:h-8 opacity-40" />}
+                  {isMuted && (
+                    <motion.div 
+                      layoutId="mute-glow"
+                      className="absolute inset-0 bg-orange-500/10 animate-pulse pointer-events-none"
+                    />
+                  )}
+                </motion.button>
+              )}
+            </AnimatePresence>
+
             <motion.button
               whileHover={{ scale: isConnecting ? 1 : 1.02 }}
               whileTap={{ scale: isConnecting ? 1 : 0.98 }}
               onClick={isConnected ? disconnect : () => connect()}
               disabled={isConnecting}
-              className={`relative w-full py-5 rounded-[28px] font-black text-[11px] uppercase tracking-[0.3em] transition-all flex items-center justify-center gap-4 cursor-pointer shadow-2xl ${
+              className={`relative flex-1 py-5 sm:py-6 rounded-[28px] font-black text-[11px] sm:text-[12px] uppercase tracking-[0.2em] sm:tracking-[0.3em] transition-all flex items-center justify-center gap-4 cursor-pointer shadow-2xl ${
                 isConnected 
                   ? 'bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20' 
                   : 'bg-white text-black hover:bg-zinc-100'
@@ -614,9 +604,9 @@ export default function App() {
               {isConnecting ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : isConnected ? (
-                <>সেশনটি বিচ্ছিন্ন করুন</>
+                <>বন্ধ করুন</>
               ) : (
-                <>তামিমকে চালু করুন</>
+                <>{assistantName} চালু করুন</>
               )}
             </motion.button>
           </div>
