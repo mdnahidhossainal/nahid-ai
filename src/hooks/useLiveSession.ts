@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { GoogleGenAI, Modality, Type } from "@google/genai";
-import { AudioStreamer } from '../lib/audio-streamer';
+import { AudioStreamer } from '@/lib/audio-streamer';
 
 /**
  * useLiveSession - Custom hook for managing Gemini Live API session

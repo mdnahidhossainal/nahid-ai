@@ -6,13 +6,13 @@ import {
   User, Trash2, Brain, Save, PlusCircle, Menu, History, Bot, Volume2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useLiveSession } from './hooks/useLiveSession';
+import { useLiveSession } from '@/hooks/useLiveSession';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { StatusBar, Style } from '@capacitor/status-bar';
-import { NahidLogo } from './components/NahidLogo';
+import { NahidLogo } from '@/components/NahidLogo';
 
 import { Canvas } from '@react-three/fiber';
-import { Earth } from './components/Earth';
+import { Earth } from '@/components/Earth';
 
 /**
  * Tamim AI - System Assistant Edition (3D Earth, Memory, History & Dynamic Name)
