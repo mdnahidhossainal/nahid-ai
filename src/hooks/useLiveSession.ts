@@ -332,18 +332,22 @@ export function useLiveSession() {
               }, 1000);
             }
           },
-          onclose: () => {
-            console.log("LOG: Session closed remotely.");
+          onclose: (event: any) => {
+            console.log("LOG: Session closed remotely.", event);
             clearTimeout(timeoutId);
             setIsConnected(false);
             setIsConnecting(false);
-            setError("সার্ভার থেকে সংযোগ বিচ্ছিন্ন হয়ে গেছে। আবার চেষ্টা করুন।");
+            
+            // Provide more technical info to help debugging
+            const code = event?.code || "1006";
+            const reason = event?.reason || "অজানা কারণ (Unknown)";
+            setError(`সার্ভার থেকে সংযোগ বিচ্ছিন্ন। (Code: ${code}, Reason: ${reason})। দয়া করে কিছুক্ষণ পর আবার চেষ্টা করুন।`);
             disconnect();
           },
           onerror: (err: any) => {
             console.error("LOG: Session error received:", err);
             clearTimeout(timeoutId);
-            const errorMsg = err.message || JSON.stringify(err);
+            const errorMsg = err.message || (typeof err === 'object' ? JSON.stringify(err) : String(err));
             setError(`সংযোগে সমস্যা: ${errorMsg}`);
             setIsConnecting(false);
             disconnect();
