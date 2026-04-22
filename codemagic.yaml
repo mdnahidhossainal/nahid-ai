@@ -20,6 +20,11 @@ workflows:
       - name: Capacitor sync
         script: |
           npx cap sync android
+      - name: Fix Gradle Wrapper
+        script: |
+          cd android
+          # Replace corrupt jar with a fresh one if needed
+          curl -L https://github.com/gradle/gradle/raw/master/gradle/wrapper/gradle-wrapper.jar -o gradle/wrapper/gradle-wrapper.jar
       - name: Build Android APK
         script: |
           cd android
