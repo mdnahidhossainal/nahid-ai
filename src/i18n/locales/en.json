@@ -1,0 +1,132 @@
+{
+  "common": {
+    "save": "Save",
+    "delete": "Delete",
+    "cancel": "Cancel",
+    "close": "Close",
+    "back": "Back",
+    "loading": "Loading...",
+    "success": "Success",
+    "error": "Error",
+    "saved": "Saved successfully!"
+  },
+  "nav": {
+    "profile": "Profile",
+    "name": "Name",
+    "voice": "Voice",
+    "memory": "Memory",
+    "history": "History",
+    "settings": "Settings",
+    "assistant": "Assistant",
+    "permissions": "Permissions",
+    "api": "API",
+    "hybrid": "Hybrid",
+    "language": "Language"
+  },
+  "auth": {
+    "login": "Login",
+    "logout": "Logout",
+    "guestMode": "Guest Mode",
+    "signInToSync": "Sign in to sync memories",
+    "loginSuccess": "Login Successful! 🚀",
+    "logoutSuccess": "Logged out successfully",
+    "biometricLogin": "Biometric Login",
+    "fingerprintLogin": "Fingerprint Login",
+    "secureBiometric": "Secure Biometric Access",
+    "enableBiometric": "Enable Biometric Login",
+    "biometricPrompt": "Use your fingerprint to unlock the app",
+    "notAvailable": "Biometric not available on this device",
+    "enabled": "Biometric login enabled! 🎉",
+    "disabled": "Biometric login disabled",
+    "failed": "Biometric verification failed"
+  },
+  "profile": {
+    "userName": "User Name",
+    "nickName": "Nick Name",
+    "addressName": "Assistant will call you this",
+    "personalize": "Personalize how I address you"
+  },
+  "assistant": {
+    "name": "Assistant Name",
+    "voiceType": "Voice Type",
+    "settingsUpdated": "Settings updated successfully! 🎉",
+    "nameChange": "Change Assistant Name",
+    "nameDesc": "Enter a name for your assistant. It will update everywhere.",
+    "currentName": "Current Name",
+    "voiceSettings": "Voice Settings",
+    "voiceDesc": "Select a voice for your assistant. Select between male and female.",
+    "maleVoice": "Nahid AI (Male)",
+    "femaleVoice": "Tania AI (Female)",
+    "profVoice": "Professional Voice",
+    "youthVoice": "Youthful Voice",
+    "wakeWord": "Custom Wake Word (Name to call AI)"
+  },
+  "home": {
+    "securelyLoading": "Securely Loading...",
+    "intelligenceEvolution": "Intelligence Evolution",
+    "startNewChat": "Start New Chat",
+    "newTab": "New Tab",
+    "connecting": "Connecting...",
+    "privacyActive": "Privacy Mode Active",
+    "speaking": "is speaking...",
+    "listening": "I'm listening friend...",
+    "greeting": "Assalamu Alaikum, I am",
+    "errorText": "Please refresh the page and try again.",
+    "privacyInfo": "is not listening now. Unmute to speak.",
+    "readyToListen": "I am ready to listen. Ask me anything.",
+    "fullAssistant": "Click below to talk to your full system assistant.",
+    "startAssistant": "Start",
+    "stopAssistant": "Stop",
+    "initializing": "Initialising Core...",
+    "listeningActive": "Listening Active"
+  },
+  "history": {
+    "previousChats": "Previous Chats",
+    "backToList": "Back to List",
+    "noHistory": "No history found",
+    "resumeChat": "Resume This Chat"
+  },
+  "api": {
+    "title": "Gemini API Settings",
+    "subtitle": "Set your personal API key",
+    "placeholder": "Enter your API key here...",
+    "help": "If you don't have an API key, get one for free from Google AI Studio. It will be saved locally on your device."
+  },
+  "memory": {
+    "empty": "My memory is currently empty..."
+  },
+  "permissions": {
+    "title": "Permission Center",
+    "subtitle": "Manage native android system features securely.",
+    "location": "Live Location Tracking",
+    "movement": "Real-time Movement Awareness",
+    "locationDesc": "If enabled, Nahid AI will always know where you are and provide updates.",
+    "microphone": "Microphone Access",
+    "voiceDesc": "Enable voice interaction with Nahid AI",
+    "storage": "Filesystem Storage",
+    "filesDesc": "Allow AI to save memories and read local documents",
+    "enabled": "ENABLED",
+    "grant": "GRANT",
+    "systemControl": "Auto-System Control",
+    "autoDesc": "AI can automatically adjust system brightness and volume.",
+    "standby": "STANDBY",
+    "alwaysListening": "Always Listening",
+    "bgService": "Background Foreground Service",
+    "overlay": "Display over other apps",
+    "overlayDesc": "Allow AI to show response on top of other apps",
+    "battery": "Battery Optimization",
+    "batteryDesc": "Disable battery saving for 24/7 background service"
+  },
+  "hybrid": {
+    "title": "Adaptive Hybrid Mode",
+    "subtitle": "On-Device LLM & Hardware Control",
+    "desc": "This mode allows Nahid AI to use your phone's processor. It works without internet and can control hardware (torch, apps).",
+    "engine": "Gemma 2B Local Engine",
+    "statusReady": "Status: Optimized & Ready",
+    "statusDownloading": "Downloading model files...",
+    "statusMissing": "Missing: On-Device Model",
+    "downloadStart": "Start Download",
+    "deviceTarget": "Device Target",
+    "chipset": "Chipset"
+  }
+}

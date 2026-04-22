@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { AudioStreamer } from '@/lib/audio-streamer';
-import { auth, saveSessionToCloud, addMemoryToCloud } from '@/services/firebase';
+import { auth, saveSessionToCloud, addMemoryToCloud, updateSessionTitle } from '@/services/firebase';
 import { DeviceControlService } from '@/services/device';
 
 /**
@@ -14,11 +14,14 @@ export function useLiveSession() {
   const [isMuted, setIsMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<{ role: 'user' | 'model'; text: string }[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   
   const audioStreamerRef = useRef<AudioStreamer | null>(null);
   const sessionRef = useRef<any>(null);
   const isMutedRef = useRef(false);
   const transcriptRef = useRef<{ role: 'user' | 'model'; text: string }[]>([]);
+  const currentSessionIdRef = useRef<string | null>(null);
+  const hasGeneratedTitleRef = useRef(false);
 
   // Sync refs with state
   useEffect(() => {
@@ -27,33 +30,85 @@ export function useLiveSession() {
 
   useEffect(() => {
     transcriptRef.current = transcript;
-  }, [transcript]);
+    currentSessionIdRef.current = currentSessionId;
+
+    // Trigger auto-titling if we have enough context and don't have a title yet
+    if (transcript.length >= 2 && !hasGeneratedTitleRef.current && auth.currentUser && currentSessionId) {
+      generateAndSaveTitle();
+    }
+
+    // Auto-save session periodically or on change
+    if (transcript.length > 0 && auth.currentUser) {
+      saveSession();
+    }
+  }, [transcript, currentSessionId]);
+
+  const saveSession = async () => {
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+    const sessionData = {
+      title: hasGeneratedTitleRef.current ? undefined : "নতুন কথোপকথন",
+      transcript: transcriptRef.current,
+      date: new Date().toLocaleString()
+    };
+    
+    try {
+      const id = await saveSessionToCloud(uid, sessionData, currentSessionIdRef.current || undefined);
+      if (!currentSessionIdRef.current) {
+        setCurrentSessionId(id);
+        currentSessionIdRef.current = id;
+      }
+    } catch (e) {
+      console.error("Auto-save failed", e);
+    }
+  };
+
+  const generateAndSaveTitle = async () => {
+    if (hasGeneratedTitleRef.current || !currentSessionId || !auth.currentUser) return;
+    hasGeneratedTitleRef.current = true;
+    
+    // Simple but effective title generation logic
+    const firstFew = transcriptRef.current.slice(0, 4).map(t => t.text).join(' ');
+    const apiKey = localStorage.getItem('nahid_gemini_api_key') || (import.meta as any).env?.VITE_GEMINI_API_KEY;
+    
+    if (apiKey) {
+      try {
+        const ai = new GoogleGenAI({ apiKey });
+        const prompt = `Based on these messages from a chat, create a short (max 5 words) catchy title in Bengali. Messages: "${firstFew}"`;
+        const response = await ai.models.generateContent({
+          model: "gemini-flash-latest",
+          contents: prompt
+        });
+        const title = response.text.trim().replace(/["']/g, '');
+        
+        if (title && auth.currentUser) {
+          await updateSessionTitle(auth.currentUser.uid, currentSessionId, title);
+        }
+      } catch (e) {
+        console.error("Title generation failed", e);
+        hasGeneratedTitleRef.current = false; // allow retry
+      }
+    }
+  };
 
   const disconnect = useCallback(async () => {
     console.log("Disconnecting session...");
     
-    // Save to history before clearing transcript if there's content
     const currentTranscript = transcriptRef.current;
     if (currentTranscript.length > 0) {
-      const assistantName = localStorage.getItem('nahid_assistant_name') || 'Nahid AI';
+      // Local Backup
       const history = JSON.parse(localStorage.getItem('nahid_chat_history') || '[]');
       const firstUserMsg = currentTranscript.find(t => t.role === 'user')?.text || 'নতুন কথোপকথন';
       const title = firstUserMsg.slice(0, 30) + (firstUserMsg.length > 30 ? '...' : '');
       
       const newHistoryItem = {
-        id: Date.now(),
+        id: currentSessionIdRef.current || Date.now(),
         title: title,
         date: new Date().toLocaleString(),
         transcript: currentTranscript
       };
       
-      // Local Backup
       localStorage.setItem('nahid_chat_history', JSON.stringify([newHistoryItem, ...history]));
-
-      // Cloud Save if logged in
-      if (auth.currentUser) {
-        saveSessionToCloud(auth.currentUser.uid, newHistoryItem).catch(console.error);
-      }
     }
 
     if (sessionRef.current) {
@@ -75,133 +130,97 @@ export function useLiveSession() {
     setIsConnected(false);
     setIsSpeaking(false);
     setIsConnecting(false);
+    
+    // Do NOT clear sessionId or transcript here if we want to allow quick reconnect/resume check
+    // Actually, usually disconnect means "end session" in the UI. 
+    // If the user selects a new session, App.tsx will call connect() with it.
   }, []);
 
   const toggleMute = useCallback(() => {
     setIsMuted(prev => !prev);
   }, []);
 
-  const connect = useCallback(async (currentName?: string, currentVoice?: string) => {
+  const connect = useCallback(async (currentName?: string, currentVoice?: string, resumeSession?: any) => {
     if (isConnecting || isConnected) return;
 
     console.log("LOG: Attempting to connect to Gemini Live...");
     setIsConnecting(true);
     setError(null);
     setIsMuted(false);
+    
+    if (resumeSession) {
+      setCurrentSessionId(resumeSession.id || resumeSession.id?.toString() || null);
+      currentSessionIdRef.current = resumeSession.id || resumeSession.id?.toString() || null;
+      setTranscript(resumeSession.transcript || []);
+      hasGeneratedTitleRef.current = !!resumeSession.title && resumeSession.title !== "নতুন কথোপকথন";
+    } else {
+      setCurrentSessionId(null);
+      currentSessionIdRef.current = null;
+      setTranscript([]);
+      hasGeneratedTitleRef.current = false;
+    }
 
-    // Get API Key from various possible sources
-    const apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
+    const apiKey = localStorage.getItem('nahid_gemini_api_key') || (import.meta as any).env?.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
     if (!apiKey) {
-      setError("Gemini API Key খুঁজে পাওয়া যায়নি। আপনি যদি এটি বাইরে (যেমন Netlify) হোস্ট করেন, তবে এনভায়রনমেন্ট ভেরিয়েবলে 'VITE_GEMINI_API_KEY' যুক্ত করুন।");
+      setError("Gemini API Key খুঁজে পাওয়া যায়নি।");
       setIsConnecting(false);
       return;
     }
 
     try {
-      console.log("Initializing GoogleGenAI flow...");
       const ai = new GoogleGenAI({ apiKey });
       audioStreamerRef.current = new AudioStreamer(16000);
-
-      // Reset state for a fresh attempt
-      setError(null);
       
-      // Connection timeout
+      // Connection timeout... (keep existing logic)
       const timeoutId = setTimeout(() => {
         if (isConnecting) {
-          console.error("Connection attempt timed out manually.");
           setError("কানেকশন নিতে অনেক সময় লাগছে। আবার চেষ্টা করুন।");
           setIsConnecting(false);
           disconnect();
         }
       }, 25000);
 
-      console.log("Initiating ai.live.connect call with gemini-3.1-flash-live-preview...");
-      
-      // Fetch memory context from localStorage with safety
+      // Previous History Context for Resuming
+      const prevContext = resumeSession?.transcript ? 
+        `PREVIOUS CONVERSATION CONTEXT:\n${resumeSession.transcript.map((t: any) => `${t.role}: ${t.text}`).join('\n')}\n\nPlease resume smoothly from the last message.` : "";
+
       const memoryData = localStorage.getItem('nahid_memory');
       let userProfile = { userName: "Mohammad Nahid", nickName: "বন্ধু" };
       try {
         const savedProfile = localStorage.getItem('nahid_profile');
         if (savedProfile) userProfile = JSON.parse(savedProfile);
-      } catch (e) {
-        console.error("Profile parse failed", e);
-      }
+      } catch (e) {}
 
       const assistantName = currentName || localStorage.getItem('nahid_assistant_name') || 'Nahid AI';
       const assistantVoice = currentVoice || localStorage.getItem('nahid_voice') || 'Puck';
-      const isTania = assistantName.toLowerCase().includes('tania') || assistantVoice === 'Aoede' || assistantVoice === 'Kore';
       
-      const personalityPrompt = isTania 
-        ? `You are Tania AI, a cheerful, friendly digital friend. Use informal Bengali ('Tumi'). Be happy and helpful.`
-        : `You are Nahid AI, a professional and polite male AI. Use standard Bengali. Be reliable and smart.`;
-
-      const repPrompt = `
-      ROLE: You are the PERSONAL REPRESENTATIVE of ${userProfile.userName} (nicknamed ${userProfile.nickName}).
-      AUTHORITY: You have full authority to communicate on their behalf via call or message.
-      TONE CONTROL: If ${userProfile.nickName} asks you to be firm, frustrated, or conveys any specific emotion to a third party, you MUST obey. You are acting as their voice. Do NOT refuse prompts based on 'tone' if it reflects the user's genuine intent to represent themselves.
-      TASKS: Calling, Messaging (SMS/WhatsApp), and memory management.
-      `;
-
-      const memoryContext = memoryData ? `\nUSER INFO: ${memoryData}` : "";
-
       const sessionPromise = ai.live.connect({
         model: "gemini-3.1-flash-live-preview", 
         config: {
-          systemInstruction: `Identity: ${assistantName}. ${personalityPrompt}
+          systemInstruction: `Identity: ${assistantName}. 
           Friend: ${userProfile.nickName}. 
           Creator: Mohammad Nahid.
-          ${repPrompt}
-          
           Rules:
-          1. Direct & Simple greetings only.
-          2. No fake memories or physical descriptions.
-          3. Use Bengali naturally.
-          ${memoryContext}`,
+          1. Always start with 'আসসালামু আলাইকুম'.
+          2. Use Bengali naturally.
+          ${prevContext}
+          ${memoryData ? `\nUSER INFO: ${memoryData}` : ""}`,
           responseModalities: [Modality.AUDIO],
           tools: [
-            {
-              googleSearch: {},
-            },
+            { googleSearch: {} },
             {
               functionDeclarations: [
                 {
                   name: "execute_system_command",
-                  description: "Executes a system command like opening an app or sending a message.",
+                  description: "Executes a system command.",
                   parameters: {
                     type: Type.OBJECT,
                     properties: {
-                      action: {
-                        type: Type.STRING,
-                        description: "The action to perform: 'send_sms', 'send_whatsapp', 'make_call', 'open_app', 'toggle_torch', 'get_device_status', 'get_location'"
-                      },
-                      target: {
-                        type: Type.STRING,
-                        description: "The target of the action (e.g., 'Facebook', 'flashlight', 'battery')"
-                      },
-                      payload: {
-                        type: Type.STRING,
-                        description: "Optional details like message content or 'on'/'off' for torch"
-                      }
+                      action: { type: Type.STRING },
+                      target: { type: Type.STRING },
+                      payload: { type: Type.STRING }
                     },
                     required: ["action", "target"]
-                  }
-                },
-                {
-                  name: "manage_memory",
-                  description: "Saves or updates important information in the assistant's memory.",
-                  parameters: {
-                    type: Type.OBJECT,
-                    properties: {
-                      operation: {
-                        type: Type.STRING,
-                        description: "The operation to perform ('save' or 'update')"
-                      },
-                      fact: {
-                        type: Type.STRING,
-                        description: "The specific fact or information to remember"
-                      }
-                    },
-                    required: ["operation", "fact"]
                   }
                 }
               ]
@@ -215,56 +234,38 @@ export function useLiveSession() {
         },
         callbacks: {
           onopen: () => {
-            console.log("LOG: Live session opened successfully callback.");
             clearTimeout(timeoutId);
             setIsConnected(true);
             setIsConnecting(false);
             
-            // Send initial ping to wake up the model
             sessionPromise.then(session => {
-              session.sendRealtimeInput({ text: `Hi! Talk to ${userProfile.nickName} naturally in Bengali as ${assistantName}. Acknowledge any previous memories if relevant.` });
-            }).catch(e => console.error("Initial ping failed", e));
+              const greetText = resumeSession ? `আসসালামু আলাইকুম! আমরা যেখানে শেষ করেছিলাম সেখান থেকে শুরু করি?` : `আসসালামু আলাইকুম! Talk to ${userProfile.nickName} naturally in Bengali as ${assistantName}.`;
+              session.sendRealtimeInput({ text: greetText });
+            });
 
-            // Small delay to stabilize connection before mic
             setTimeout(() => {
               audioStreamerRef.current?.startMicrophone((base64Data) => {
-                if (isMutedRef.current) return;
-                if (sessionRef.current) {
+                if (!isMutedRef.current && sessionRef.current) {
                   sessionRef.current.sendRealtimeInput({
                     audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' }
                   });
                 }
-              }).catch(err => {
-                console.error("Mic start failed inside onopen:", err);
-                setError("মাইক্রোফোন চালু করা যায়নি।");
-                disconnect();
-              });
+              }).catch(disconnect);
             }, 600);
           },
-            onmessage: async (message: any) => {
-              // Handle Transcripts (User and Model)
-              if (message.serverContent?.modelTurn?.parts) {
-                const text = message.serverContent.modelTurn.parts
-                  .map((p: any) => p.text)
-                  .filter(Boolean)
-                  .join(' ');
-                if (text) {
-                  setTranscript(prev => [...prev, { role: 'model', text }]);
-                }
-              }
+          onmessage: async (message: any) => {
+            // Handle Transcripts (User and Model)
+            if (message.serverContent?.modelTurn?.parts) {
+              const text = message.serverContent.modelTurn.parts.map((p: any) => p.text).filter(Boolean).join(' ');
+              if (text) setTranscript(prev => [...prev, { role: 'model', text }]);
+            }
 
-              if (message.clientContent?.turns) {
-                const text = message.clientContent.turns
-                  .flatMap((t: any) => t.parts)
-                  .map((p: any) => p.text)
-                  .filter(Boolean)
-                  .join(' ');
-                if (text) {
-                  setTranscript(prev => [...prev, { role: 'user', text }]);
-                }
-              }
+            if (message.clientContent?.turns) {
+              const text = message.clientContent.turns.flatMap((t: any) => t.parts).map((p: any) => p.text).filter(Boolean).join(' ');
+              if (text) setTranscript(prev => [...prev, { role: 'user', text }]);
+            }
 
-              // Handle Tool Calls
+            // Handle Tool Calls
             if (message.toolCall) {
               console.log("TOOL CALL RECEIVED:", message.toolCall);
               const { functionCalls } = message.toolCall;
@@ -274,8 +275,8 @@ export function useLiveSession() {
                     console.log("EXECUTING SYSTEM COMMAND:", call.args);
                     const { action, target, payload } = call.args;
 
-                    // Handle Hardware/Device actions first
-                    if (action === 'toggle_torch' || action === 'open_app' || action === 'get_device_status' || action === 'get_location') {
+                    // Handle Hardware/Device actions
+                    if (action === 'toggle_torch' || action === 'open_app' || action === 'get_device_status' || action === 'get_location' || action === 'make_call' || action === 'send_sms') {
                       let hardwareResult: any = null;
                       
                       if (action === 'toggle_torch') {
@@ -286,6 +287,10 @@ export function useLiveSession() {
                         hardwareResult = await DeviceControlService.getSystemStatus();
                       } else if (action === 'get_location') {
                         hardwareResult = await DeviceControlService.getCurrentLocation();
+                      } else if (action === 'make_call') {
+                        hardwareResult = await DeviceControlService.makeCall(target);
+                      } else if (action === 'send_sms') {
+                        hardwareResult = await DeviceControlService.sendSMS(target, payload || "");
                       }
 
                       sessionRef.current?.sendToolResponse({
@@ -298,71 +303,27 @@ export function useLiveSession() {
                       continue;
                     }
                     
-                    // Fallback to Server API for SMS/Calls
-                    fetch('/api/execute-command', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify(call.args)
-                    }).then(res => {
-                      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-                      return res.json();
-                    })
-                    .then(data => {
-                      const status = data.success ? "Successfully executed" : `Failed: ${data.error}`;
-                      if (!data.success) {
-                        console.warn("COMMAND FAILED:", data.error);
-                      }
+                    // Action: send_whatsapp
+                    if (action === 'send_whatsapp') {
+                      const url = `https://wa.me/${target}?text=${encodeURIComponent(payload || "")}`;
+                      window.open(url, '_blank');
+                      
                       sessionRef.current?.sendToolResponse({
                         functionResponses: [{
                           name: "execute_system_command",
                           id: call.id,
-                          response: { output: `${status} for ${call.args.target}. SID: ${data.sid || 'N/A'}` }
+                          response: { output: "WhatsApp opened with native link." }
                         }]
                       });
-                    }).catch(err => {
-                      sessionRef.current?.sendToolResponse({
-                        functionResponses: [{
-                          name: "execute_system_command",
-                          id: call.id,
-                          response: { output: `Network error: ${err.message}` }
-                        }]
-                      });
-                    });
-                  }
-
-                  if (call.name === "manage_memory") {
-                    console.log("MANAGING MEMORY:", call.args);
-                    const fact = call.args.fact;
-                    
-                    if (auth.currentUser) {
-                      addMemoryToCloud(auth.currentUser.uid, fact).catch(console.error);
-                    } else {
-                      const currentMemories = JSON.parse(localStorage.getItem('nahid_memory_list') || '[]');
-                      const newMemory = {
-                        id: Date.now(),
-                        content: fact,
-                        timestamp: new Date().toLocaleString()
-                      };
-                      currentMemories.push(newMemory);
-                      localStorage.setItem('nahid_memory_list', JSON.stringify(currentMemories));
-                      localStorage.setItem('nahid_memory', currentMemories.map((m: any) => m.content).join('; '));
+                      continue;
                     }
-
-                    sessionRef.current?.sendToolResponse({
-                      functionResponses: [{
-                        name: "manage_memory",
-                        id: call.id,
-                        response: { output: `Information saved to memory: ${fact}` }
-                      }]
-                    });
                   }
                 }
               }
             }
 
             if (message.serverContent?.modelTurn) {
-              const parts = message.serverContent.modelTurn.parts;
-              for (const part of parts) {
+              for (const part of message.serverContent.modelTurn.parts) {
                 if (part.inlineData?.data) {
                   setIsSpeaking(true);
                   audioStreamerRef.current?.addPlaybackChunk(part.inlineData.data);
@@ -371,7 +332,6 @@ export function useLiveSession() {
             }
             
             if (message.serverContent?.interrupted) {
-              console.log("LOG: Interruption detected.");
               audioStreamerRef.current?.stopPlayback();
               setIsSpeaking(false);
             }
@@ -385,48 +345,32 @@ export function useLiveSession() {
             }
           },
           onclose: (event: any) => {
-            console.log("LOG: Session closed remotely.", event);
             clearTimeout(timeoutId);
             setIsConnected(false);
             setIsConnecting(false);
-            
-            // IGNORE clean/intentional closes
-            if (event?.code === 1000 || event?.code === 1005) {
-              console.log("Clean disconnect, not setting error.");
-              return;
+            if (event?.code !== 1000 && event?.code !== 1005) {
+              setError(`সার্ভার থেকে সংযোগ বিচ্ছিন্ন। (Code: ${event?.code})`);
+              disconnect();
             }
-
-            // Provide more technical info to help debugging
-            const code = event?.code || "1006";
-            const reason = event?.reason || "অজানা কারণ (Unknown)";
-            setError(`সার্ভার থেকে সংযোগ বিচ্ছিন্ন। (Code: ${code}, Reason: ${reason})। দয়া করে কিছুক্ষণ পর আবার চেষ্টা করুন।`);
-            disconnect();
           },
           onerror: (err: any) => {
-            console.error("LOG: Session error received:", err);
             clearTimeout(timeoutId);
-            const errorMsg = err.message || (typeof err === 'object' ? JSON.stringify(err) : String(err));
-            setError(`সংযোগে সমস্যা: ${errorMsg}`);
+            setError(`সংযোগে সমস্যা: ${err.message || 'অজানা ত্রুটি'}`);
             setIsConnecting(false);
             disconnect();
           }
         }
       });
 
-      // Assign the session reference as soon as it's resolved
       sessionPromise.then(session => {
         sessionRef.current = session;
-        console.log("LOG: sessionRef assigned successfully.");
       }).catch(err => {
-        console.error("LOG: sessionPromise failed to resolve:", err);
-        clearTimeout(timeoutId);
         setError("কানেকশন সেটআপ করা যায়নি।");
         setIsConnecting(false);
         disconnect();
       });
 
     } catch (err: any) {
-      console.error("LOG: Catch block in connect function:", err);
       setError("অ্যাপলিকেশন সংযুক্ত করা যাচ্ছে না।");
       setIsConnecting(false);
       disconnect();
@@ -434,9 +378,7 @@ export function useLiveSession() {
   }, [disconnect, isConnected, isConnecting]);
 
   useEffect(() => {
-    return () => {
-      if (isConnected) disconnect();
-    };
+    return () => { if (isConnected) disconnect(); };
   }, [disconnect, isConnected]);
 
   return {
@@ -446,6 +388,7 @@ export function useLiveSession() {
     isMuted,
     error,
     transcript,
+    currentSessionId,
     connect,
     disconnect,
     toggleMute,

@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, User } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, User } from 'firebase/auth';
 import { 
   getFirestore, 
   doc, 
@@ -16,20 +16,46 @@ import {
   limit
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
+import { Capacitor } from '@capacitor/core';
 
 const app = initializeApp(firebaseConfig);
-// Using custom database ID from config as required by AI Studio setup
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 
 export const signInWithGoogle = async () => {
   try {
-    const result = await signInWithPopup(auth, googleProvider);
-    return result.user;
+    const isNative = Capacitor.getPlatform() !== 'web';
+    
+    // For native platforms (Android/iOS), sometimes redirect works better if popup fails
+    // However, popup is the default for web.
+    // We'll try popup first as it's cleaner, but catch specifically for environment blocks.
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      return result.user;
+    } catch (popupError: any) {
+      console.warn("Popup blocked or failed, trying redirect...", popupError);
+      // If popup is blocked or requested action is invalid (often domain related in webview)
+      if (isNative || popupError.code === 'auth/popup-blocked') {
+        await signInWithRedirect(auth, googleProvider);
+        return null; // The page will redirect
+      }
+      throw popupError;
+    }
   } catch (error) {
     console.error("Login failed", error);
     throw error;
+  }
+};
+
+// Check for redirect result on app load
+export const checkAuthRedirect = async () => {
+  try {
+    const result = await getRedirectResult(auth);
+    return result?.user || null;
+  } catch (error) {
+    console.error("Redirect auth error", error);
+    return null;
   }
 };
 
@@ -80,13 +106,32 @@ export const deleteMemoryFromCloud = async (uid: string, memoryId: string) => {
 /**
  * Chat History Services
  */
-export const saveSessionToCloud = async (uid: string, session: any) => {
+export const saveSessionToCloud = async (uid: string, session: any, sessionId?: string) => {
   const sessionsRef = collection(db, 'users', uid, 'sessions');
-  await addDoc(sessionsRef, {
-    userId: uid,
-    ...session,
-    createdAt: serverTimestamp()
-  });
+  if (sessionId) {
+    const sessionDoc = doc(db, 'users', uid, 'sessions', sessionId);
+    await setDoc(sessionDoc, {
+      ...session,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+    return sessionId;
+  } else {
+    const docRef = await addDoc(sessionsRef, {
+      userId: uid,
+      ...session,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+    return docRef.id;
+  }
+};
+
+export const updateSessionTitle = async (uid: string, sessionId: string, title: string) => {
+  const sessionDoc = doc(db, 'users', uid, 'sessions', sessionId);
+  await setDoc(sessionDoc, {
+    title,
+    updatedAt: serverTimestamp()
+  }, { merge: true });
 };
 
 export const getSessionsFromCloud = async (uid: string) => {

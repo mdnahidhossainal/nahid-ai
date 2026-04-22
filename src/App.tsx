@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Settings as SettingsIcon, Info, Loader2, Zap, AudioLines, 
   ShieldCheck, ShieldAlert, Shield, X, 
@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useLiveSession } from '@/hooks/useLiveSession';
 import { Capacitor } from '@capacitor/core';
 import { NahidLogo } from '@/components/NahidLogo';
+import { useWakeWord } from '@/hooks/useWakeWord';
 import { useLocalAI } from '@/hooks/useLocalAI';
 import { 
   signInWithGoogle, 
@@ -20,12 +21,13 @@ import {
   getMemoriesFromCloud,
   deleteMemoryFromCloud,
   getSessionsFromCloud,
-  saveSessionToCloud
+  saveSessionToCloud,
+  checkAuthRedirect
 } from '@/services/firebase';
+import { biometricService } from '@/services/biometricService';
+import { Fingerprint, Smartphone, Globe } from 'lucide-react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-
-import { Canvas } from '@react-three/fiber';
-import { HolographicHorse } from '@/components/HolographicHorse';
+import { useTranslation } from 'react-i18next';
 
 /**
  * Nahid AI - System Assistant Edition (3D Earth, Memory, History & Dynamic Name)
@@ -42,17 +44,77 @@ export default function App() {
     connect, 
     disconnect,
     toggleMute,
-    setTranscript
+    setTranscript,
+    currentSessionId
   } = useLiveSession();
 
+  const { t, i18n: i18nInstance } = useTranslation();
+  const { setupLocalModel, isModelLoading, loadProgress, isReady: isLocalReady } = useLocalAI();
+
+  // State Hooks
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedSession, setSelectedSession] = useState<{ id: number; title: string; date: string; transcript: any[] } | null>(null);
-  const [activeTab, setActiveTab] = useState<'profile' | 'memory' | 'assistant' | 'voice' | 'permissions' | 'hybrid'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'memory' | 'assistant' | 'voice' | 'permissions' | 'hybrid' | 'api' | 'language'>('profile');
+  const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem('nahid_gemini_api_key') || '');
   const [hybridEnabled, setHybridEnabled] = useState(() => localStorage.getItem('nahid_hybrid') === 'true');
   const [isOnline, setIsOnline] = useState(window.navigator.onLine);
 
-  const { setupLocalModel, isModelLoading, loadProgress, isReady: isLocalReady } = useLocalAI();
+  const [assistantName, setAssistantName] = useState(() => {
+    return localStorage.getItem('nahid_assistant_name') || 'Nahid AI';
+  });
+
+  const [assistantVoice, setAssistantVoice] = useState(() => {
+    return localStorage.getItem('nahid_voice') || 'Puck';
+  });
+
+  const [wakeWord, setWakeWord] = useState(() => {
+    return localStorage.getItem('nahid_wake_word') || 'বন্ধু';
+  });
+
+  const [isAlwaysListening, setIsAlwaysListening] = useState(() => {
+    return localStorage.getItem('nahid_always_listening') === 'true';
+  });
+
+  useWakeWord({
+    wakeWord,
+    enabled: isAlwaysListening && !isConnected && !isConnecting,
+    onWake: () => {
+      triggerHaptic();
+      connect(assistantName, assistantVoice);
+    }
+  });
+
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+
+  const [profile, setProfile] = useState(() => {
+    const saved = localStorage.getItem('nahid_profile');
+    return saved ? JSON.parse(saved) : { userName: 'Mohammad Nahid', nickName: 'বন্ধু' };
+  });
+
+  const [memories, setMemories] = useState<{ id: number; content: string; timestamp: string }[]>([]);
+  const [history, setHistory] = useState<{ id: number; title: string; date: string; transcript: any[] }[]>([]);
+  const [showSplash, setShowSplash] = useState(true);
+  const [isLocationSharing, setIsLocationSharing] = useState(() => localStorage.getItem('nahid_location_sharing') === 'true');
+  const [biometricEnabled, setBiometricEnabled] = useState(() => localStorage.getItem('nahid_biometric_enabled') === 'true');
+  const [currentLocation, setCurrentLocation] = useState<any>(null);
+
+  const [permStatus, setPermStatus] = useState({
+    mic: 'unknown',
+    storage: 'unknown',
+    location: 'unknown',
+    overlay: 'unknown',
+    battery: 'unknown'
+  });
+
+  // Effect Hooks
+  useEffect(() => {
+    document.documentElement.lang = i18nInstance.language;
+  }, [i18nInstance.language]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -65,30 +127,20 @@ export default function App() {
     };
   }, []);
 
-  // Assistant Name State
-  const [assistantName, setAssistantName] = useState(() => {
-    return localStorage.getItem('nahid_assistant_name') || 'Nahid AI';
-  });
-
-  // Assistant Voice State
-  const [assistantVoice, setAssistantVoice] = useState(() => {
-    return localStorage.getItem('nahid_voice') || 'Puck';
-  });
-
-  const [showToast, setShowToast] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [isAuthLoading, setIsAuthLoading] = useState(true);
-
-  // Auth State Listener
   useEffect(() => {
+    checkAuthRedirect().then(user => {
+      if (user) {
+        setToastMessage(t('auth.loginSuccess'));
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 3000);
+      }
+    });
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       setIsAuthLoading(false);
       
       if (user) {
-        // Sync data from cloud if user logs in
         const cloudProfile = await getUserProfile(user.uid);
         if (cloudProfile) {
           setProfile({ userName: cloudProfile.userName, nickName: cloudProfile.nickName });
@@ -106,31 +158,6 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Handle Voice Change with Auto-Name Switch
-  const handleVoiceChange = (voice: string) => {
-    setAssistantVoice(voice);
-    if (voice === 'Puck') {
-      setAssistantName('Nahid AI');
-    } else if (voice === 'Aoede' || voice === 'Kore') {
-      setAssistantName('Tania AI');
-    }
-  };
-
-  // User Profile State
-  const [profile, setProfile] = useState(() => {
-    const saved = localStorage.getItem('nahid_profile');
-    return saved ? JSON.parse(saved) : { userName: 'Mohammad Nahid', nickName: 'বন্ধু' };
-  });
-
-  // Memories State
-  const [memories, setMemories] = useState<{ id: number; content: string; timestamp: string }[]>([]);
-  
-  // History State
-  const [history, setHistory] = useState<{ id: number; title: string; date: string; transcript: any[] }[]>([]);
-  const [showSplash, setShowSplash] = useState(true);
-  const [isLocationSharing, setIsLocationSharing] = useState(() => localStorage.getItem('nahid_location_sharing') === 'true');
-  const [currentLocation, setCurrentLocation] = useState<any>(null);
-
   useEffect(() => {
     let watcherId: string | null = null;
     
@@ -147,10 +174,6 @@ export default function App() {
               lng: position.coords.longitude,
               timestamp: position.timestamp
             });
-            
-            // If connected and sharing is on, we'll feed this to Gemini eventually
-            // but we don't want to spam realtimeInput. 
-            // We'll let the AI ask via tool or send a context update periodically.
           }
         });
       } catch (e) {
@@ -171,55 +194,107 @@ export default function App() {
     };
   }, [isLocationSharing]);
 
-  // Periodic location context update to Gemini
   useEffect(() => {
     if (isConnected && isLocationSharing && currentLocation) {
       const interval = setInterval(() => {
-        // We use a non-speaking realtime input just to update context
-        // Note: In some SDK versions, this might trigger a response.
-        // For Nahid AI, we'll assume the model is instructed to handle 'CONTEXT_UPDATE' silently unless important.
-        const contextMsg = `[CONTEXT_UPDATE] User current location: Latitude ${currentLocation.lat}, Longitude ${currentLocation.lng}. Timestamp: ${new Date(currentLocation.timestamp).toLocaleTimeString()}`;
-        console.log("Sending location context update to Gemini...");
-        // Here we just keep it available for the TOOL CALL when the AI asks "Where are you?"
-      }, 60000); // Only every minute to save battery/token
+        console.log("Location context available for AI...");
+      }, 60000);
       return () => clearInterval(interval);
     }
   }, [isConnected, isLocationSharing, currentLocation]);
 
   useEffect(() => {
-    // Hide splash after 2.5s
     const timer = setTimeout(() => setShowSplash(false), 2500);
     
-    // Native Status Bar Style
     const setupStatusBar = async () => {
       if (Capacitor.getPlatform() !== 'web') {
         try {
           const { StatusBar, Style } = await import('@capacitor/status-bar');
           await StatusBar.setStyle({ style: Style.Dark });
           await StatusBar.setBackgroundColor({ color: '#000000' });
-        } catch (e) {
-          console.log('Native Status Bar not available');
+        } catch (e) {}
+
+        if (localStorage.getItem('nahid_biometric_enabled') === 'true') {
+          const available = await biometricService.isAvailable();
+          if (available) {
+            const success = await biometricService.authenticate('অ্যাপটি আনলক করতে আপনার ফিঙ্গারপ্রিন্ট দিন');
+            if (success) {
+              setToastMessage('স্বাগতম! আপনি বায়োমেট্রিক দিয়ে আনলক করেছেন।');
+              setShowToast(true);
+            }
+          }
         }
       }
     };
 
     setupStatusBar();
 
-    // Only load from LocalStorage if NOT in the middle of a cloud sync or logged in
-    // This prevents empty local storage from overwriting cloud history
     if (!currentUser) {
       const memList = JSON.parse(localStorage.getItem('nahid_memory_list') || '[]');
       setMemories(memList);
       const histList = JSON.parse(localStorage.getItem('nahid_chat_history') || '[]');
       setHistory(histList);
     } else {
-      // Refresh cloud data when panels open to ensure latest
       if (showSettings || showHistory) {
         getMemoriesFromCloud(currentUser.uid).then(m => setMemories(m as any));
         getSessionsFromCloud(currentUser.uid).then(h => setHistory(h as any));
       }
     }
+    return () => clearTimeout(timer);
   }, [showSettings, showHistory, currentUser]);
+
+  useEffect(() => {
+    checkAllPermissions();
+  }, []);
+
+  // Utility Functions
+  const checkAllPermissions = async () => {
+    try {
+      const micPermission = await navigator.permissions.query({ name: 'microphone' as any });
+      const { Geolocation } = await import('@capacitor/geolocation');
+      const locPerm = await Geolocation.checkPermissions();
+      const { Filesystem } = await import('@capacitor/filesystem');
+      const storePerm = await Filesystem.checkPermissions();
+
+      setPermStatus(prev => ({
+        ...prev,
+        mic: micPermission.state === 'granted' ? 'enabled' : (micPermission.state === 'denied' ? 'disabled' : 'prompt'),
+        location: locPerm.location === 'granted' ? 'enabled' : (locPerm.location === 'denied' ? 'disabled' : 'prompt'),
+        storage: storePerm.publicStorage === 'granted' ? 'enabled' : (storePerm.publicStorage === 'denied' ? 'disabled' : 'prompt')
+      }));
+    } catch (e) {
+      console.error("Permission check failed", e);
+    }
+  };
+
+  const requestPerm = async (type: 'mic' | 'storage' | 'location' | 'overlay' | 'battery') => {
+    triggerHaptic();
+    try {
+      if (type === 'mic') {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+      } else if (type === 'location') {
+        const { Geolocation } = await import('@capacitor/geolocation');
+        await Geolocation.requestPermissions();
+        setIsLocationSharing(true);
+        localStorage.setItem('nahid_location_sharing', 'true');
+      } else if (type === 'storage') {
+        const { Filesystem } = await import('@capacitor/filesystem');
+        await Filesystem.requestPermissions();
+      } else if (type === ('overlay' as any)) {
+        setToastMessage('Redirecting to System Settings for Overlay permission...');
+        setShowToast(true);
+        // Simulated: In real Android, we use custom intents or native plugins
+      } else if (type === ('battery' as any)) {
+        setToastMessage('Redirecting to Battery settings to ignore optimization...');
+        setShowToast(true);
+      }
+      setTimeout(checkAllPermissions, 500);
+    } catch (e: any) {
+      setToastMessage(t('common.error') + ": " + e.message);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    }
+  };
 
   const triggerHaptic = async () => {
     if (Capacitor.getPlatform() !== 'web') {
@@ -234,8 +309,26 @@ export default function App() {
     try {
       setIsAuthLoading(true);
       await signInWithGoogle();
-    } catch (e) {
-      console.error(e);
+      setToastMessage(t('auth.loginSuccess'));
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    } catch (e: any) {
+      console.error("Login Error:", e);
+      if (e.code === 'auth/popup-closed-by-user') {
+        setToastMessage(t('auth.popup-closed-by-user', { defaultValue: 'আপনি লগইন পপ-আপটি বন্ধ করে দিয়েছেন। আবার চেষ্টা করুন।' }));
+      } else if (e.code === 'auth/cancelled-by-user') {
+        setToastMessage(t('auth.cancelled-by-user', { defaultValue: 'লগইন বাতিল করা হয়েছে।' }));
+      } else if (e.code === 'auth/popup-blocked') {
+        setToastMessage(t('auth.popup-blocked', { defaultValue: 'আপনার ব্রাউজার পপ-আপ ব্লক করেছে। পপ-আপ অ্যালাউ করুন।' }));
+      } else if (e.code === 'auth/invalid-api-key') {
+        setToastMessage(t('auth.invalid-api-key', { defaultValue: 'Firebase API Key ভুল। প্রকল্প সেটিংস চেক করুন।' }));
+      } else if (e.code === 'auth/unauthorized-domain' || e.message?.includes('requested action is invalid')) {
+        setToastMessage(t('auth.unauthorized-domain', { defaultValue: 'লগইন ডোমেইনটি অনুমোদিত নয়। ফায়ারবেস কনসোলে ডোমেইন এবং SHA-1 (Android) যুক্ত করুন।' }));
+      } else {
+        setToastMessage(`${t('common.error')}: ${e.message || 'আবার চেষ্টা করুন'}`);
+      }
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 5000);
     } finally {
       setIsAuthLoading(false);
     }
@@ -252,6 +345,15 @@ export default function App() {
     }
   };
 
+  const handleVoiceChange = (voice: string) => {
+    setAssistantVoice(voice);
+    if (voice === 'Puck') {
+      setAssistantName('Nahid AI');
+    } else if (voice === 'Aoede' || voice === 'Kore') {
+      setAssistantName('Tania AI');
+    }
+  };
+
   const saveProfile = async () => {
     triggerHaptic();
     setIsSaving(true);
@@ -260,17 +362,21 @@ export default function App() {
     localStorage.setItem('nahid_profile', JSON.stringify(profile));
     localStorage.setItem('nahid_assistant_name', assistantName);
     localStorage.setItem('nahid_voice', assistantVoice);
+    localStorage.setItem('nahid_wake_word', wakeWord);
+    localStorage.setItem('nahid_always_listening', isAlwaysListening.toString());
     
     // Save to Firebase if logged in
     if (currentUser) {
       await saveUserProfile(currentUser.uid, {
         ...profile,
         assistantName,
-        assistantVoice
+        assistantVoice,
+        wakeWord,
+        isAlwaysListening
       });
     }
 
-    setToastMessage('সেটিংস সফলভাবে আপডেট করা হয়েছে! 🎉');
+    setToastMessage(t('assistant.settingsUpdated'));
     setShowToast(true);
     setTimeout(() => setShowToast(false), 3000);
     setTimeout(() => setIsSaving(false), 1000);
@@ -302,14 +408,67 @@ export default function App() {
     }
     setTranscript([]);
     setSelectedSession(null);
-    setTimeout(() => connect(), 300);
+    setTimeout(() => connect(assistantName, assistantVoice), 300);
   };
 
-  const permissions = [
-    { name: 'Microphone', icon: Mic, status: 'Enabled', color: 'text-green-400' },
-    { name: 'Storage Access', icon: Database, status: 'Enabled', color: 'text-green-400' },
-    { name: 'Live Location', icon: Shield, status: isLocationSharing ? 'Tracking' : 'Off', color: isLocationSharing ? 'text-blue-400' : 'text-white/20' },
-    { name: 'App Control', icon: LayoutGrid, status: 'Standby', color: 'text-cyan-400' },
+  const refreshHistory = useCallback(async () => {
+    if (currentUser) {
+      try {
+        const cloudHistory = await getSessionsFromCloud(currentUser.uid);
+        setHistory(cloudHistory as any);
+      } catch (e) {
+        console.error("Refresh history failed", e);
+      }
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (showHistory && currentUser) {
+      refreshHistory();
+    }
+  }, [showHistory, currentUser, refreshHistory]);
+
+  const permissionsUI = [
+    { 
+      id: 'mic',
+      name: t('permissions.microphone'), 
+      desc: t('permissions.voiceDesc', { defaultValue: 'Enable voice interaction for AI' }),
+      icon: Mic, 
+      status: permStatus.mic,
+      action: () => requestPerm('mic')
+    },
+    { 
+      id: 'storage',
+      name: t('permissions.storage'), 
+      desc: t('permissions.filesDesc', { defaultValue: 'Allow AI to save and read data files' }),
+      icon: Database, 
+      status: permStatus.storage,
+      action: () => requestPerm('storage')
+    },
+    { 
+      id: 'location',
+      name: t('permissions.location'), 
+      desc: t('permissions.locationDesc'),
+      icon: Shield, 
+      status: isLocationSharing && permStatus.location === 'enabled' ? 'enabled' : 'disabled',
+      action: () => requestPerm('location')
+    },
+    { 
+      id: 'overlay',
+      name: t('permissions.overlay', { defaultValue: 'Display over other apps' }), 
+      desc: t('permissions.overlayDesc', { defaultValue: 'Allow AI to show response on top of other apps' }),
+      icon: Zap, 
+      status: permStatus.overlay,
+      action: () => requestPerm('overlay' as any)
+    },
+    { 
+      id: 'battery',
+      name: t('permissions.battery', { defaultValue: 'Battery Optimization' }), 
+      desc: t('permissions.batteryDesc', { defaultValue: 'Disable battery saving for 24/7 background service' }),
+      icon: Zap, 
+      status: permStatus.battery,
+      action: () => requestPerm('battery' as any)
+    },
   ];
 
   return (
@@ -323,32 +482,22 @@ export default function App() {
             className="fixed inset-0 z-[1000] bg-black flex flex-col items-center justify-center p-8"
           >
             <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ duration: 1.2, ease: "easeOut" }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.8 }}
               className="relative flex flex-col items-center"
             >
-              <NahidLogo className="w-48 h-48 sm:w-64 sm:h-64 mb-8" />
-              <motion.div 
-                initial={{ width: 0 }}
-                animate={{ width: "100%" }}
-                transition={{ delay: 0.5, duration: 1.5 }}
-                className="h-[2px] bg-gradient-to-r from-transparent via-blue-500 to-transparent absolute bottom-0 left-0"
-              />
+              <NahidLogo className="w-64 h-64 sm:w-96 sm:h-96" />
             </motion.div>
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 1 }}
+              transition={{ delay: 0.8 }}
               className="mt-12 text-center"
             >
-              <h2 className="text-3xl font-black tracking-[0.4em] uppercase italic text-white/90">Nahid AI</h2>
-              <p className="text-[10px] uppercase font-bold tracking-[0.6em] text-white/30 mt-4">Intelligence Evolution</p>
-            </motion.div>
-            <div className="absolute bottom-12 left-1/2 -translate-x-1/2 flex items-center gap-3">
-              <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
-              <span className="text-[8px] uppercase tracking-[0.3em] font-black text-white/20">Securely Loading...</span>
-            </div>
+                <h2 className="text-3xl font-black tracking-[0.4em] uppercase italic text-white/90">Nahid AI</h2>
+                <p className="text-[10px] uppercase font-bold tracking-[0.6em] text-white/30 mt-4">{t('home.intelligenceEvolution')}</p>
+              </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -379,7 +528,7 @@ export default function App() {
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <History className="w-5 h-5 text-blue-400" />
-                  <h2 className="text-xl font-black uppercase tracking-tighter">আগের আলাপ</h2>
+                  <h2 className="text-xl font-black uppercase tracking-tighter">{t('history.previousChats')}</h2>
                 </div>
                 <button onClick={() => setShowHistory(false)} className="p-2 hover:bg-white/5 rounded-xl">
                   <X className="w-5 h-5 text-white/40" />
@@ -392,7 +541,7 @@ export default function App() {
                     onClick={() => setSelectedSession(null)}
                     className="flex items-center gap-2 text-[10px] uppercase font-black text-blue-400 mb-4 hover:underline"
                    >
-                     ← লিস্টে ফিরে যান
+                     ← {t('history.backToList')}
                    </button>
                    <h3 className="font-bold text-lg mb-4 text-white/90 leading-tight">{selectedSession.title}</h3>
                    <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
@@ -407,6 +556,16 @@ export default function App() {
                        </div>
                      ))}
                    </div>
+                    <button 
+                      onClick={() => {
+                        setShowHistory(false);
+                        connect(assistantName, assistantVoice, selectedSession);
+                      }}
+                      className="mt-4 w-full py-4 bg-blue-600/20 text-blue-400 border border-blue-500/20 rounded-2xl font-black text-[11px] uppercase tracking-widest hover:bg-blue-600/30 transition-all active:scale-95 flex items-center justify-center gap-2"
+                    >
+                      <Zap className="w-4 h-4" />
+                      {t('history.resumeChat', { defaultValue: 'চ্যাট চালিয়ে যান' })}
+                    </button>
                 </div>
               ) : (
                 <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar">
@@ -424,7 +583,7 @@ export default function App() {
                   ) : (
                     <div className="h-full flex flex-col items-center justify-center text-white/20 text-center px-4">
                       <History className="w-12 h-12 mb-4 opacity-5" />
-                      <p className="text-[10px] uppercase font-bold tracking-widest">কোনো ইতিহাস পাওয়া যায়নি</p>
+                      <p className="text-[10px] uppercase font-bold tracking-widest">{t('history.noHistory')}</p>
                     </div>
                   )}
                 </div>
@@ -504,49 +663,63 @@ export default function App() {
                 exit={{ opacity: 0, scale: 0.9, y: 20 }}
                 className={`relative w-full max-w-lg bg-[#0a0a0f]/90 backdrop-blur-[50px] border border-white/10 rounded-[32px] overflow-hidden transition-all duration-500 flex flex-col h-[600px] max-h-[85vh] ${isSaving ? 'border-blue-500/50' : ''}`}
               >
-                {/* Tabs */}
-                <div className="flex border-b border-white/5 p-2 gap-1">
+                {/* Tabs - Horizontally Scrollable & Spacious */}
+                <div className="flex overflow-x-auto border-b border-white/5 p-4 gap-4 no-scrollbar snap-x snap-mandatory cursor-grab active:cursor-grabbing">
                   <button 
                     onClick={() => setActiveTab('profile')}
-                    className={`flex-1 py-4 flex items-center justify-center gap-2 rounded-2xl transition-all ${activeTab === 'profile' ? 'bg-white/10 text-white font-black shadow-inner' : 'text-white/40 hover:text-white/60'}`}
+                    className={`flex-shrink-0 snap-center min-w-[110px] py-4 px-6 flex flex-col items-center justify-center gap-3 rounded-[24px] transition-all duration-300 ${activeTab === 'profile' ? 'bg-blue-600 shadow-lg shadow-blue-500/20 text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
                   >
-                    <UserIcon className="w-4 h-4" />
-                    <span className="text-[10px] uppercase tracking-widest">প্রোফাইল</span>
+                    <UserIcon className="w-5 h-5" />
+                    <span className="text-[12px] font-black uppercase tracking-wider">{t('nav.profile')}</span>
                   </button>
                   <button 
                     onClick={() => setActiveTab('assistant')}
-                    className={`flex-1 py-4 flex items-center justify-center gap-2 rounded-2xl transition-all ${activeTab === 'assistant' ? 'bg-white/10 text-white font-black shadow-inner' : 'text-white/40 hover:text-white/60'}`}
+                    className={`flex-shrink-0 snap-center min-w-[110px] py-4 px-6 flex flex-col items-center justify-center gap-3 rounded-[24px] transition-all duration-300 ${activeTab === 'assistant' ? 'bg-blue-600 shadow-lg shadow-blue-500/20 text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
                   >
-                    <Bot className="w-4 h-4" />
-                    <span className="text-[10px] uppercase tracking-widest text-center">নাম</span>
+                    <Bot className="w-5 h-5" />
+                    <span className="text-[12px] font-black uppercase tracking-wider">{t('nav.name')}</span>
                   </button>
                   <button 
                     onClick={() => setActiveTab('voice')}
-                    className={`flex-1 py-4 flex items-center justify-center gap-2 rounded-2xl transition-all ${activeTab === 'voice' ? 'bg-white/10 text-white font-black shadow-inner' : 'text-white/40 hover:text-white/60'}`}
+                    className={`flex-shrink-0 snap-center min-w-[110px] py-4 px-6 flex flex-col items-center justify-center gap-3 rounded-[24px] transition-all duration-300 ${activeTab === 'voice' ? 'bg-blue-600 shadow-lg shadow-blue-500/20 text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
                   >
-                    <Volume2 className="w-4 h-4" />
-                    <span className="text-[10px] uppercase tracking-widest text-center">কণ্ঠ</span>
+                    <Volume2 className="w-5 h-5" />
+                    <span className="text-[12px] font-black uppercase tracking-wider">{t('nav.voice')}</span>
+                  </button>
+                  <button 
+                    onClick={() => setActiveTab('language')}
+                    className={`flex-shrink-0 snap-center min-w-[110px] py-4 px-6 flex flex-col items-center justify-center gap-3 rounded-[24px] transition-all duration-300 ${activeTab === 'language' ? 'bg-blue-600 shadow-lg shadow-blue-500/20 text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
+                  >
+                    <Globe className="w-5 h-5" />
+                    <span className="text-[12px] font-black uppercase tracking-wider">{i18nInstance.language === 'en' ? 'Language' : 'ভাষা'}</span>
                   </button>
                   <button 
                     onClick={() => setActiveTab('memory')}
-                    className={`flex-1 py-4 flex items-center justify-center gap-2 rounded-2xl transition-all ${activeTab === 'memory' ? 'bg-white/10 text-white font-black shadow-inner' : 'text-white/40 hover:text-white/60'}`}
+                    className={`flex-shrink-0 snap-center min-w-[110px] py-4 px-6 flex flex-col items-center justify-center gap-3 rounded-[24px] transition-all duration-300 ${activeTab === 'memory' ? 'bg-blue-600 shadow-lg shadow-blue-500/20 text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
                   >
-                    <Brain className="w-4 h-4" />
-                    <span className="text-[10px] uppercase tracking-widest text-center">স্মৃতি</span>
+                    <Brain className="w-5 h-5" />
+                    <span className="text-[12px] font-black uppercase tracking-wider">{t('nav.memory')}</span>
                   </button>
                   <button 
                     onClick={() => setActiveTab('hybrid')}
-                    className={`flex-1 py-4 flex items-center justify-center gap-2 rounded-2xl transition-all ${activeTab === 'hybrid' ? 'bg-white/10 text-white font-black shadow-inner' : 'text-white/40 hover:text-white/60'}`}
+                    className={`flex-shrink-0 snap-center min-w-[110px] py-4 px-6 flex flex-col items-center justify-center gap-3 rounded-[24px] transition-all duration-300 ${activeTab === 'hybrid' ? 'bg-blue-600 shadow-lg shadow-blue-500/20 text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
                   >
-                    <Zap className="w-4 h-4" />
-                    <span className="text-[10px] uppercase tracking-widest text-center">হাইব্রিড</span>
+                    <Zap className="w-5 h-5" />
+                    <span className="text-[12px] font-black uppercase tracking-wider">{t('nav.hybrid')}</span>
+                  </button>
+                  <button 
+                    onClick={() => setActiveTab('api')}
+                    className={`flex-shrink-0 snap-center min-w-[110px] py-4 px-6 flex flex-col items-center justify-center gap-3 rounded-[24px] transition-all duration-300 ${activeTab === 'api' ? 'bg-blue-600 shadow-lg shadow-blue-500/20 text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
+                  >
+                    <Database className="w-5 h-5" />
+                    <span className="text-[12px] font-black uppercase tracking-wider">{t('nav.api')}</span>
                   </button>
                   <button 
                     onClick={() => setActiveTab('permissions')}
-                    className={`flex-1 py-4 flex items-center justify-center gap-2 rounded-2xl transition-all ${activeTab === 'permissions' ? 'bg-white/10 text-white font-black shadow-inner' : 'text-white/40 hover:text-white/60'}`}
+                    className={`flex-shrink-0 snap-center min-w-[110px] py-4 px-6 flex flex-col items-center justify-center gap-3 rounded-[24px] transition-all duration-300 ${activeTab === 'permissions' ? 'bg-blue-600 shadow-lg shadow-blue-500/20 text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
                   >
-                    <Shield className="w-4 h-4" />
-                    <span className="text-[10px] uppercase tracking-widest text-center">অনুমতি</span>
+                    <Shield className="w-5 h-5" />
+                    <span className="text-[12px] font-black uppercase tracking-wider">{t('nav.permissions')}</span>
                   </button>
                 </div>
 
@@ -566,10 +739,10 @@ export default function App() {
                             )}
                             <div>
                                <h4 className="text-[11px] font-black uppercase tracking-widest leading-none mb-1">
-                                 {currentUser ? 'Cloud Linked' : 'Guest Mode'}
+                                 {currentUser ? 'Cloud Linked' : t('auth.guestMode')}
                                </h4>
                                <p className="text-[9px] text-white/40 uppercase font-mono leading-none">
-                                 {currentUser ? currentUser.email : 'Sign in to sync memories'}
+                                 {currentUser ? currentUser.email : t('auth.signInToSync')}
                                </p>
                             </div>
                           </div>
@@ -584,14 +757,57 @@ export default function App() {
                                className="px-4 py-2 bg-blue-600 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2"
                              >
                                {isAuthLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <LogIn className="w-3 h-3" />}
-                               Join
+                               {t('auth.login')}
                              </button>
                           )}
                         </div>
                       </div>
 
                       <div className="space-y-4">
-                        <label className="text-[10px] uppercase tracking-[0.2em] font-black text-white/40">ইউজারের নাম</label>
+                        <label className="text-[10px] uppercase tracking-[0.2em] font-black text-white/40">{t('auth.biometricLogin')}</label>
+                        <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/10">
+                          <div className="flex items-center gap-3">
+                            <Fingerprint className={`w-6 h-6 ${biometricEnabled ? 'text-blue-400' : 'text-white/20'}`} />
+                            <div>
+                               <p className="text-[11px] font-black uppercase tracking-widest text-white">{t('auth.fingerprintLogin')}</p>
+                               <p className="text-[9px] text-white/30 uppercase font-mono tracking-tighter">{t('auth.secureBiometric')}</p>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={async () => {
+                              if (!biometricEnabled) {
+                                const available = await biometricService.isAvailable();
+                                if (!available) {
+                                  setToastMessage(t('biometric.notAvailable', { defaultValue: 'আপনার ডিভাইসে বায়োমেট্রিক সাপোর্ট নেই।' }));
+                                  setShowToast(true);
+                                  return;
+                                }
+                                const success = await biometricService.authenticate(t('auth.enableBiometric'));
+                                if (success) {
+                                  setBiometricEnabled(true);
+                                  localStorage.setItem('nahid_biometric_enabled', 'true');
+                                  setToastMessage(t('biometric.enabled', { defaultValue: 'বায়োমেট্রিক লগইন চালু হয়েছে! 🎉' }));
+                                } else {
+                                  setToastMessage(t('biometric.failed', { defaultValue: 'বায়োমেট্রিক যাচাইকরণ ব্যর্থ হয়েছে।' }));
+                                }
+                                setShowToast(true);
+                              } else {
+                                setBiometricEnabled(false);
+                                localStorage.removeItem('nahid_biometric_enabled');
+                                setToastMessage(t('biometric.disabled', { defaultValue: 'বায়োমেট্রিক লগইন বন্ধ করা হয়েছে।' }));
+                                setShowToast(true);
+                              }
+                            }}
+                            className={`w-12 h-7 rounded-full p-1 transition-all flex ${biometricEnabled ? 'bg-blue-600 justify-end' : 'bg-white/10 justify-start'}`}
+                          >
+                            <div className="h-5 w-5 rounded-full bg-white shadow-lg" />
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-white/30 italic px-2">{i18nInstance.language === 'bn' ? 'এটি চালু করলে আপনি অ্যাপ খোলার সময় আঙুলের ছাপ দিয়ে আনলক করতে পারবেন।' : 'Unlock the app with your fingerprint on launch.'}</p>
+                      </div>
+
+                      <div className="space-y-4">
+                        <label className="text-[10px] uppercase tracking-[0.2em] font-black text-white/40">{t('profile.userName')}</label>
                         <input 
                           type="text" 
                           value={profile.userName}
@@ -600,7 +816,7 @@ export default function App() {
                         />
                       </div>
                       <div className="space-y-4">
-                        <label className="text-[10px] uppercase tracking-[0.2em] font-black text-white/40">ডাকনাম (এসিস্ট্যান্ট এই নামে ডাকবে)</label>
+                        <label className="text-[10px] uppercase tracking-[0.2em] font-black text-white/40">{t('profile.nickName')} ({t('profile.personalize')})</label>
                         <input 
                           type="text" 
                           value={profile.nickName}
@@ -612,7 +828,7 @@ export default function App() {
                         onClick={saveProfile}
                         className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] flex items-center justify-center gap-2 shadow-2xl shadow-blue-500/20"
                       >
-                        <Save className="w-4 h-4" /> প্রোফাইল সেভ করুন
+                        <Save className="w-4 h-4" /> {t('common.save')} {t('nav.profile')}
                       </button>
                     </div>
                   )}
@@ -620,13 +836,13 @@ export default function App() {
                   {activeTab === 'assistant' && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                       <div className="p-6 bg-blue-600/10 border border-blue-500/20 rounded-2xl space-y-2">
-                        <h3 className="text-blue-400 font-black text-[10px] uppercase tracking-widest">অ্যাসিস্ট্যান্ট নাম পরিবর্তন</h3>
+                        <h3 className="text-blue-400 font-black text-[10px] uppercase tracking-widest">{t('assistant.nameChange', { defaultValue: 'অ্যাসিস্ট্যান্ট নাম পরিবর্তন' })}</h3>
                         <p className="text-[11px] text-white/50 leading-relaxed">
-                          নিচের বক্সে আপনার অ্যাসিস্ট্যান্টের জন্য একটি নতুন নাম লিখুন। এটি অ্যাপের সব জায়গায় এবং চ্যাটেও আপডেট হয়ে যাবে।
+                          {i18nInstance.language === 'bn' ? 'নিচের বক্সে আপনার অ্যাসিস্ট্যান্টের জন্য একটি নতুন নাম লিখুন। এটি অ্যাপের সব জায়গায় এবং চ্যাটেও আপডেট হয়ে যাবে।' : 'Change the name of your AI assistant. This will be updated everywhere.'}
                         </p>
                       </div>
                       <div className="space-y-4">
-                        <label className="text-[10px] uppercase tracking-[0.2em] font-black text-white/40">অ্যাসিস্ট্যান্টের বর্তমান নাম</label>
+                        <label className="text-[10px] uppercase tracking-[0.2em] font-black text-white/40">{t('assistant.currentName', { defaultValue: 'Assistant Name' })}</label>
                         <input 
                           type="text" 
                           value={assistantName}
@@ -635,11 +851,43 @@ export default function App() {
                           className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 outline-none focus:border-blue-500/50 transition-all font-bold text-blue-400"
                         />
                       </div>
+
+                      <div className="space-y-4">
+                        <label className="text-[10px] uppercase tracking-[0.2em] font-black text-white/40">{t('assistant.wakeWord', { defaultValue: 'Custom Wake Word (Name to call AI)' })}</label>
+                        <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-2xl mb-4">
+                          <p className="text-[10px] text-yellow-200/70 italic">{i18nInstance.language === 'bn' ? 'এটি সেই নাম যা ধরে ডাকলে এআই স্বয়ংক্রিয়ভাবে উত্তর দেবে। যেমন: বন্ধু, জারিফ ইত্যাদি।' : 'When you call this name, AI will automatically wake up and reply.'}</p>
+                        </div>
+                        <input 
+                          type="text" 
+                          value={wakeWord}
+                          onChange={(e) => setWakeWord(e.target.value)}
+                          placeholder="EX: বন্ধু"
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 outline-none focus:border-yellow-500/50 transition-all font-bold text-yellow-400"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between p-6 bg-white/5 rounded-[24px] border border-white/10">
+                        <div className="flex items-center gap-4">
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isAlwaysListening ? 'bg-green-600' : 'bg-white/10'}`}>
+                            <Mic className="w-6 h-6" />
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-black uppercase tracking-widest">{t('permissions.alwaysListening', { defaultValue: 'Always Listening' })}</p>
+                            <p className="text-[9px] text-white/30 uppercase font-mono tracking-tighter">{t('permissions.bgService', { defaultValue: 'Background Foreground Service' })}</p>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => setIsAlwaysListening(!isAlwaysListening)}
+                          className={`w-12 h-7 rounded-full p-1 transition-all flex ${isAlwaysListening ? 'bg-green-600 justify-end' : 'bg-white/10 justify-start'}`}
+                        >
+                          <div className="h-5 w-5 rounded-full bg-white shadow-lg" />
+                        </button>
+                      </div>
                       <button 
                         onClick={saveProfile}
                         className="w-full py-4 bg-white/10 text-white rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] flex items-center justify-center gap-2 border border-white/10"
                       >
-                        নতুন নাম সেভ করুন
+                        {t('common.save')} {t('nav.name')}
                       </button>
                     </div>
                   )}
@@ -647,9 +895,9 @@ export default function App() {
                   {activeTab === 'voice' && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                       <div className="p-6 bg-indigo-600/10 border border-indigo-500/20 rounded-2xl space-y-2">
-                        <h3 className="text-indigo-400 font-black text-[10px] uppercase tracking-widest">ভয়েস সেটিংস</h3>
+                        <h3 className="text-indigo-400 font-black text-[10px] uppercase tracking-widest">{t('assistant.voiceSettings', { defaultValue: 'ভয়েস সেটিংস' })}</h3>
                         <p className="text-[11px] text-white/50 leading-relaxed">
-                          আপনার অ্যাসিস্ট্যান্টের জন্য একটি কণ্ঠস্বর নির্বাচন করুন। পুরুষ অথবা নারী কণ্ঠে কথা বলা শুরু করবে।
+                           {i18nInstance.language === 'bn' ? 'আপনার অ্যাসিস্ট্যান্টের জন্য একটি কণ্ঠস্বর নির্বাচন করুন। পুরুষ অথবা নারী কণ্ঠে কথা বলা শুরু করবে।' : 'Select a voice for your assistant. Choose between male and female tones.'}
                         </p>
                       </div>
                       
@@ -685,8 +933,41 @@ export default function App() {
                         onClick={saveProfile}
                         className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] flex items-center justify-center gap-2 shadow-2xl shadow-indigo-500/20"
                       >
-                        ভয়েস সেভ করুন
+                         {t('common.save')} {t('nav.voice')}
                       </button>
+                    </div>
+                  )}
+
+                  {activeTab === 'language' && (
+                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                      <div className="p-6 bg-blue-600/10 border border-blue-500/20 rounded-2xl space-y-2">
+                        <h3 className="text-blue-400 font-black text-[10px] uppercase tracking-widest">{i18nInstance.language === 'en' ? 'Language Settings' : 'ভাষা সেটিংস'}</h3>
+                        <p className="text-[11px] text-white/50 leading-relaxed">
+                  {i18nInstance.language === 'en' ? 'Select your preferred language for the application interface.' : 'অ্যাপ্লিকেশন ইন্টারফেসের জন্য আপনার পছন্দসই ভাষা নির্বাচন করুন।'}
+                </p>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <button 
+                  onClick={() => i18nInstance.changeLanguage('en')}
+                  className={`p-6 rounded-3xl border transition-all flex flex-col items-center gap-4 ${i18nInstance.language === 'en' ? 'bg-blue-600/20 border-blue-500' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+                >
+                   <div className="text-center">
+                    <span className="block font-black text-[14px] uppercase tracking-widest text-white">English</span>
+                    <span className="text-[9px] text-white/30 uppercase font-mono tracking-tighter">Native</span>
+                  </div>
+                </button>
+
+                <button 
+                  onClick={() => i18nInstance.changeLanguage('bn')}
+                  className={`p-6 rounded-3xl border transition-all flex flex-col items-center gap-4 ${i18nInstance.language === 'bn' ? 'bg-blue-600/20 border-blue-500' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+                >
+                   <div className="text-center">
+                    <span className="block font-black text-[14px] uppercase tracking-widest text-white">বাংলা</span>
+                    <span className="text-[9px] text-white/30 uppercase font-mono tracking-tighter">Bengali</span>
+                  </div>
+                </button>
+              </div>
                     </div>
                   )}
 
@@ -710,46 +991,113 @@ export default function App() {
                       ) : (
                         <div className="h-64 flex flex-col items-center justify-center text-white/20">
                           <Brain className="w-12 h-12 mb-4 opacity-5" />
-                          <p className="text-xs italic">আমার স্মৃতিতে এখনো কোনো তথ্য নেই...</p>
+                          <p className="text-xs italic">{t('memory.empty')}</p>
                         </div>
                       )}
                     </div>
                   )}
 
-                   {activeTab === 'permissions' && (
+                   {activeTab === 'api' && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                      <div className="p-6 bg-blue-600/10 border border-blue-500/20 rounded-2xl space-y-4">
-                        <div className="flex items-center justify-between">
-                           <div>
-                             <h4 className="font-black text-[11px] uppercase tracking-widest mb-1">Live Location Tracking</h4>
-                             <p className="text-[9px] text-white/40 uppercase font-mono tracking-tighter">Real-time Movement Awareness</p>
-                           </div>
-                           <button 
-                             onClick={() => {
-                               const next = !isLocationSharing;
-                               setIsLocationSharing(next);
-                               localStorage.setItem('nahid_location_sharing', next.toString());
-                             }}
-                             className={`w-12 h-7 rounded-full p-1 transition-all flex ${isLocationSharing ? 'bg-blue-500 justify-end' : 'bg-white/10 justify-start'}`}
-                           >
-                             <div className="h-5 w-5 rounded-full bg-white shadow-lg" />
-                           </button>
+                      <div className="flex items-center gap-4 mb-2">
+                        <div className="w-12 h-12 rounded-2xl bg-blue-600/20 flex items-center justify-center">
+                          <Database className="w-6 h-6 text-blue-400" />
                         </div>
-                        <p className="text-[11px] text-white/50 italic leading-relaxed">
-                          এটি চালু থাকলে নাহিদ এআই সবসময় জানবে আপনি কোথায় আছেন এবং আপনার গতিবিধি অনুযায়ী রিয়েল-টাইম আপডেট দিতে পারবে।
+                        <div>
+                          <h3 className="text-sm font-black uppercase tracking-wider text-white">{t('api.title')}</h3>
+                          <p className="text-[10px] text-white/40 uppercase tracking-widest">{t('api.subtitle')}</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <label className="text-[10px] uppercase tracking-[0.2em] font-black text-white/40">Gemini API Key</label>
+                        <div className="relative group">
+                          <input 
+                            type="password" 
+                            value={geminiApiKey}
+                            onChange={(e) => setGeminiApiKey(e.target.value)}
+                            placeholder={t('api.placeholder')}
+                            className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 pr-12 outline-none focus:border-blue-500/50 transition-all font-mono text-sm"
+                          />
+                          <Database className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/20 group-focus-within:text-blue-500 transition-colors" />
+                        </div>
+                        <p className="text-[9px] text-white/30 leading-relaxed uppercase bg-white/5 p-4 rounded-xl border border-white/5">
+                          {i18nInstance.language === 'en' 
+                            ? <span>If you don't have an API key, get one for free from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-blue-400 underline hover:text-blue-300">Google AI Studio</a>. It will be saved locally.</span>
+                            : <span>আপনার কাছে যদি এপিআই কি না থাকে, তবে <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-blue-400 underline hover:text-blue-300">গুগল এআই স্টুডিও</a> থেকে একটি ফ্রিতে নিন। এটি আপনার ডিভাইসে সেভ থাকবে।</span>
+                          }
                         </p>
                       </div>
 
-                      <div className="grid grid-cols-1 gap-4">
-                        {permissions.map((p, i) => (
-                          <div key={i} className="p-4 bg-white/5 rounded-2xl border border-white/5 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <p.icon className={`w-5 h-5 ${p.color}`} />
-                              <span className="text-[11px] font-bold text-white/80">{p.name}</span>
+                      <button 
+                        onClick={() => {
+                          localStorage.setItem('nahid_gemini_api_key', geminiApiKey);
+                          setToastMessage(t('common.saved'));
+                          setShowToast(true);
+                          setTimeout(() => setShowToast(false), 3000);
+                        }}
+                        className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black uppercase tracking-[0.3em] py-5 rounded-2xl transition-all shadow-xl shadow-blue-900/20 active:scale-[0.98] flex items-center justify-center gap-3"
+                      >
+                        <Save className="w-5 h-5" />
+                        {t('common.save')}
+                      </button>
+                    </div>
+                  )}
+
+                  {activeTab === 'permissions' && (
+                    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 p-2">
+                      <div className="p-6 bg-blue-600/10 border border-blue-500/20 rounded-3xl mb-4">
+                        <h3 className="text-sm font-black uppercase tracking-widest text-blue-400 mb-1">{t('permissions.title', { defaultValue: 'Permission Center' })}</h3>
+                        <p className="text-[10px] text-white/40 uppercase tracking-tighter leading-relaxed">
+                          {t('permissions.subtitle', { defaultValue: 'Manage native android system features securely.' })}
+                        </p>
+                      </div>
+
+                      <div className="space-y-4">
+                        {permissionsUI.map((p) => (
+                          <div 
+                            key={p.id} 
+                            className="group p-5 bg-white/5 rounded-[28px] border border-white/5 hover:border-white/10 transition-all flex items-center justify-between gap-4"
+                          >
+                            <div className="flex items-center gap-4">
+                              <div className={`p-4 rounded-2xl ${p.status === 'enabled' ? 'bg-green-500/10 text-green-400' : 'bg-white/5 text-white/40 group-hover:text-white/60'} transition-all`}>
+                                <p.icon className="w-5 h-5" />
+                              </div>
+                              <div className="flex flex-col">
+                                <span className={`text-[12px] font-black uppercase tracking-wider ${p.status === 'enabled' ? 'text-white' : 'text-white/60'}`}>
+                                  {p.name}
+                                </span>
+                                <span className="text-[9px] text-white/20 uppercase font-mono tracking-tighter mt-0.5 line-clamp-1">
+                                  {p.desc}
+                                </span>
+                              </div>
                             </div>
-                            <span className={`text-[9px] font-black uppercase tracking-widest ${p.color}`}>{p.status}</span>
+
+                            <button 
+                              onClick={p.action}
+                              className={`px-5 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shadow-lg ${
+                                p.status === 'enabled' 
+                                  ? 'bg-green-500/20 text-green-400 border border-green-500/20' 
+                                  : 'bg-blue-600 text-white shadow-blue-500/20 hover:bg-blue-500'
+                              }`}
+                            >
+                              {p.status === 'enabled' ? t('permissions.enabled', { defaultValue: 'ENABLED' }) : t('permissions.grant', { defaultValue: 'GRANT' })}
+                            </button>
                           </div>
                         ))}
+                      </div>
+
+                      <div className="p-5 bg-white/5 rounded-3xl border border-white/5 mt-6">
+                        <div className="flex items-center gap-3">
+                          <LayoutGrid className="w-4 h-4 text-cyan-400" />
+                          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">{t('permissions.systemControl', { defaultValue: 'Auto-System Control' })}</span>
+                        </div>
+                        <div className="flex items-center justify-between mt-3">
+                          <p className="text-[9px] text-white/20 leading-relaxed uppercase">{t('permissions.autoDesc', { defaultValue: 'AI can automatically adjust system brightness and volume.' })}</p>
+                          <div className="px-3 py-1 bg-cyan-500/10 border border-cyan-500/20 rounded-lg">
+                            <span className="text-[8px] font-black text-cyan-400 uppercase tracking-widest">{t('permissions.standby', { defaultValue: 'STANDBY' })}</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -759,8 +1107,8 @@ export default function App() {
                       <div className="p-6 bg-gradient-to-br from-blue-600/20 to-purple-600/20 border border-white/10 rounded-[32px] space-y-4">
                         <div className="flex items-center justify-between">
                            <div>
-                             <h3 className="text-white font-black text-xs uppercase tracking-widest mb-1">Adaptive Hybrid Mode</h3>
-                             <p className="text-[10px] text-white/40 uppercase font-mono tracking-tighter">On-Device LLM & Hardware Control</p>
+                             <h3 className="text-white font-black text-xs uppercase tracking-widest mb-1">{t('hybrid.title')}</h3>
+                             <p className="text-[10px] text-white/40 uppercase font-mono tracking-tighter">{t('hybrid.subtitle')}</p>
                            </div>
                            <button 
                             onClick={() => {
@@ -777,7 +1125,7 @@ export default function App() {
                         <div className="h-[1px] bg-white/5" />
                         
                         <p className="text-[11px] text-white/60 leading-relaxed italic">
-                          এই মোড চালু করলে নাহিদ এআই আপনার ফোনের প্রসেসর ব্যবহার করে কাজ করবে। ইন্টারনেট না থাকলেও এটি আপনাকে সাহায্য করতে পারবে এবং সরাসরি হার্ডওয়্যার (টর্চ, অ্যাপস) কন্ট্রোল করতে পারবে।
+                          {t('hybrid.desc')}
                         </p>
                       </div>
 
@@ -789,9 +1137,9 @@ export default function App() {
                                     <Brain className="w-6 h-6" />
                                  </div>
                                  <div className="flex-1">
-                                    <h4 className="font-black text-[11px] uppercase tracking-widest mb-1">Gemma 2B Local Engine</h4>
+                                    <h4 className="font-black text-[11px] uppercase tracking-widest mb-1">{t('hybrid.engine')}</h4>
                                     <p className="text-[9px] font-mono text-white/30 uppercase">
-                                      {isLocalReady ? 'Status: Optimized & Ready' : (isModelLoading ? 'Downloading model files...' : 'Missing: On-Device Model')}
+                                      {isLocalReady ? t('hybrid.statusReady') : (isModelLoading ? t('hybrid.statusDownloading') : t('hybrid.statusMissing'))}
                                     </p>
                                  </div>
                               </div>
@@ -817,18 +1165,18 @@ export default function App() {
                                   onClick={setupLocalModel}
                                   className="w-full py-4 bg-white text-black rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-zinc-200 transition-all flex items-center justify-center gap-2"
                                 >
-                                  <PlusCircle className="w-4 h-4" /> ডাউনলোড শুরু করুন
+                                  <PlusCircle className="w-4 h-4" /> {t('hybrid.downloadStart')}
                                 </button>
                               )}
                            </div>
 
                            <div className="grid grid-cols-2 gap-4">
                               <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
-                                 <h5 className="text-[9px] uppercase font-black text-white/30 mb-2">Device Target</h5>
+                                 <h5 className="text-[9px] uppercase font-black text-white/30 mb-2">{t('hybrid.deviceTarget')}</h5>
                                  <p className="text-xs font-bold truncate">OnePlus 11R 5G</p>
                               </div>
                               <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
-                                 <h5 className="text-[9px] uppercase font-black text-white/30 mb-2">Chipset</h5>
+                                 <h5 className="text-[9px] uppercase font-black text-white/30 mb-2">{t('hybrid.chipset')}</h5>
                                  <p className="text-xs font-bold truncate">SD 8+ Gen 1</p>
                               </div>
                            </div>
@@ -864,16 +1212,21 @@ export default function App() {
                 className="absolute top-8 px-4 py-2 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center gap-2 z-20"
               >
                 <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping" />
-                <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Listening Active</span>
+                <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">{t('home.listeningActive')}</span>
               </motion.div>
             )}
           </AnimatePresence>
 
-          {/* 3D Model Stage */}
-          <div className="w-full h-[50vh] sm:h-[65vh] relative">
-            <Canvas shadows dpr={[1, 2]}>
-              <HolographicHorse isSpeaking={isSpeaking} />
-            </Canvas>
+          {/* Interactive Logo Stage */}
+          <div className="w-full h-[50vh] sm:h-[65vh] flex items-center justify-center relative touch-none">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 1 }}
+              className="relative w-80 h-80 sm:w-[500px] sm:h-[500px]"
+            >
+              <NahidLogo className="w-full h-full" />
+            </motion.div>
             
             {/* Overlay indicators */}
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
@@ -885,7 +1238,7 @@ export default function App() {
                      className="flex flex-col items-center gap-4"
                    >
                      <Loader2 className="w-12 h-12 text-white animate-spin opacity-50" />
-                     <p className="text-[10px] uppercase tracking-[0.3em] font-black text-white/50">Initialising Core...</p>
+                     <p className="text-[10px] uppercase tracking-[0.3em] font-black text-white/50">{t('home.initializing')}</p>
                    </motion.div>
                 )}
               </AnimatePresence>
@@ -898,20 +1251,20 @@ export default function App() {
           <div className="mt-8 text-center space-y-4 max-w-sm relative z-20 pb-12 sm:pb-0">
             <h2 className="text-3xl sm:text-4xl font-black tracking-tighter leading-tight bg-clip-text text-transparent bg-gradient-to-b from-white to-white/50 px-4">
               {isConnecting 
-                ? "সংযুক্ত হচ্ছে..." 
+                ? t('home.connecting') 
                 : isConnected 
-                  ? (isMuted ? "গোপনীয়তা মোড সক্রিয়" : (isSpeaking ? `${assistantName} বলছে...` : "আমি শুনছি দস্তো...")) 
-                  : `হাই, আমি ${assistantName}`}
+                  ? (isMuted ? t('home.privacyActive') : (isSpeaking ? `${assistantName} ${t('home.speaking')}` : t('home.listening'))) 
+                  : `${t('home.greeting')} ${assistantName}`}
             </h2>
             
             <p className="text-white/40 text-[12px] sm:text-sm leading-relaxed px-6 min-h-[3rem]">
               {error 
-                ? <span className="text-red-400 font-bold">{error}। দয়া করে পেজটি রিফ্রেশ করে আবার চেষ্টা করুন।</span>
+                ? <span className="text-red-400 font-bold">{error}। {t('home.errorText')}</span>
                 : (isConnected 
                     ? (isMuted 
-                        ? `${assistantName} এখন আপনার কথা শুনছে না। যখন আপনি কথা বলতে চাইবেন, মিউট বন্ধ করুন।` 
-                        : "আমি আপনার কথা শোনার জন্য তৈরি। যেকোনো কিছু জিজ্ঞেস করতে পারেন।")
-                    : "আপনার পূর্ণাঙ্গ সিস্টেম অ্যাসিস্ট্যান্টের সাথে কথা বলতে নিচে ক্লিক করুন।")
+                        ? `${assistantName} ${t('home.privacyInfo')}` 
+                        : t('home.readyToListen'))
+                    : t('home.fullAssistant'))
               }
             </p>
           </div>
@@ -964,9 +1317,9 @@ export default function App() {
               {isConnecting ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : isConnected ? (
-                <>বন্ধ করুন</>
+                <>{t('home.stopAssistant')}</>
               ) : (
-                <>{assistantName} চালু করুন</>
+                <>{assistantName} {t('home.startAssistant')}</>
               )}
             </motion.button>
           </div>
@@ -990,7 +1343,7 @@ export default function App() {
               <PlusCircle className="w-4 h-4 fill-white" />
             </div>
             <div className="flex flex-col">
-              <span className="text-[10px] opacity-60 leading-none mb-1">Nahid AI Update</span>
+              <span className="text-[10px] opacity-60 leading-none mb-1">{i18nInstance.language === 'en' ? 'Nahid AI Update' : 'নাহিদ এআই আপডেট'}</span>
               <span>{toastMessage}</span>
             </div>
           </motion.div>

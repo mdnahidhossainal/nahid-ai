@@ -79,5 +79,33 @@ export const DeviceControlService = {
     } catch (e) {
       return null;
     }
+  },
+
+  // Native Call (Native Dialer)
+  async makeCall(phoneNumber: string) {
+    try {
+      const url = `tel:${phoneNumber}`;
+      await AppLauncher.openUrl({ url });
+      return true;
+    } catch (e) {
+      console.error("Native call failed", e);
+      // Fallback for web/other
+      window.location.href = `tel:${phoneNumber}`;
+      return true;
+    }
+  },
+
+  // Native SMS
+  async sendSMS(phoneNumber: string, message: string) {
+    try {
+      const url = `sms:${phoneNumber}${phoneNumber.includes('?') ? '&' : '?'}body=${encodeURIComponent(message)}`;
+      await AppLauncher.openUrl({ url });
+      return true;
+    } catch (e) {
+      console.error("Native SMS failed", e);
+      // Fallback
+      window.location.href = `sms:${phoneNumber}?body=${encodeURIComponent(message)}`;
+      return true;
+    }
   }
 };
