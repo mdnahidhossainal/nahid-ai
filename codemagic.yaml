@@ -5,7 +5,7 @@ workflows:
     instance_type: mac_mini_m1
     environment:
       node: latest
-      java: 17
+      java: 21
       groups:
         - google_play_credentials # If you have these in Codemagic environment variables
       vars:
