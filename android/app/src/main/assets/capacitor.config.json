@@ -7,14 +7,16 @@
 	},
 	"plugins": {
 		"SplashScreen": {
-			"launchShowDuration": 2000,
+			"launchShowDuration": 2500,
 			"backgroundColor": "#000000",
-			"showSpinner": true,
+			"showSpinner": false,
 			"androidSpinnerStyle": "large",
 			"iosSpinnerStyle": "small",
 			"spinnerColor": "#ffffff",
 			"splashFullScreen": true,
-			"splashImmersive": true
+			"splashImmersive": true,
+			"layoutName": "launch_screen",
+			"useDialog": false
 		}
 	}
 }

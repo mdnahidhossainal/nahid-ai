@@ -42,8 +42,15 @@ export const signInWithGoogle = async () => {
       }
       throw popupError;
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error("Login failed", error);
+    // Provide a more helpful error for common configuration issues
+    if (error.code === 'auth/unauthorized-domain') {
+      throw new Error(`Domain Unauthorized: Please add '${window.location.hostname}' to your Firebase project's authorized domains in the console.`);
+    }
+    if (error.message?.includes('requested action is invalid')) {
+      throw new Error("Invalid Auth Request: This usually means the dynamic link or authorized domain is mismatching. Check your Firebase console.");
+    }
     throw error;
   }
 };

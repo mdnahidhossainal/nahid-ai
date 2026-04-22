@@ -192,22 +192,25 @@ export function useLiveSession() {
       } catch (e) {}
 
       const assistantName = currentName || localStorage.getItem('nahid_assistant_name') || 'Nahid AI';
-      const assistantVoice = currentVoice || localStorage.getItem('nahid_voice') || 'Puck';
+      const voiceInput = currentVoice || localStorage.getItem('nahid_voice') || 'Puck';
       
+      const validVoices = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'];
+      const validatedVoice = validVoices.includes(voiceInput) ? voiceInput : 'Zephyr';
+
+      console.log(`LOG: Connecting with voice: ${validatedVoice}, as: ${assistantName}`);
+
       const sessionPromise = ai.live.connect({
         model: "gemini-3.1-flash-live-preview", 
         config: {
           systemInstruction: `Identity: ${assistantName}. 
           Friend: ${userProfile.nickName}. 
           Creator: Mohammad Nahid.
-          Rules:
-          1. Always start with 'আসসালামু আলাইকুম'.
-          2. Use Bengali naturally.
-          ${prevContext}
-          ${memoryData ? `\nUSER INFO: ${memoryData}` : ""}`,
+          Start every conversation with 'আসসালামু আলাইকুম'.
+          Language: Bengali.
+          ${prevContext ? `CONTEXT: ${prevContext}` : ""}
+          ${memoryData ? `MEMORY: ${memoryData}` : ""}`,
           responseModalities: [Modality.AUDIO],
           tools: [
-            { googleSearch: {} },
             {
               functionDeclarations: [
                 {
@@ -228,7 +231,7 @@ export function useLiveSession() {
           ],
           speechConfig: {
             voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: assistantVoice }
+              prebuiltVoiceConfig: { voiceName: validatedVoice }
             }
           }
         },
