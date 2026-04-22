@@ -1,0 +1,36 @@
+workflows:
+  android-workflow:
+    name: Android APK Build
+    max_build_duration: 60
+    instance_type: mac_mini_m1
+    environment:
+      node: latest
+      java: 17
+      groups:
+        - google_play_credentials # If you have these in Codemagic environment variables
+      vars:
+        PACKAGE_NAME: "com.nahidai.app"
+    scripts:
+      - name: Install dependencies
+        script: |
+          npm install
+      - name: Build web assets
+        script: |
+          npm run build
+      - name: Capacitor sync
+        script: |
+          npx cap sync android
+      - name: Build Android APK
+        script: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+    artifacts:
+      - android/app/build/outputs/apk/**/*.apk
+    publishing:
+      email:
+        recipients:
+          - md.nahidbdali07@gmail.com
+        notify:
+          success: true
+          failure: true
