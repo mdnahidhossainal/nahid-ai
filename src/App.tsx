@@ -101,6 +101,7 @@ export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [isLocationSharing, setIsLocationSharing] = useState(() => localStorage.getItem('nahid_location_sharing') === 'true');
   const [biometricEnabled, setBiometricEnabled] = useState(() => localStorage.getItem('nahid_biometric_enabled') === 'true');
+  const [autoSystemControl, setAutoSystemControl] = useState(() => localStorage.getItem('nahid_auto_system_control') === 'true');
   const [currentLocation, setCurrentLocation] = useState<any>(null);
 
   const [permStatus, setPermStatus] = useState({
@@ -271,26 +272,37 @@ export default function App() {
     triggerHaptic();
     try {
       if (type === 'mic') {
-        await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(t => t.stop()); // Just trigger the OS popup
+        setToastMessage(t('biometric.enabled', { defaultValue: 'Microphone access granted' }));
       } else if (type === 'location') {
         const { Geolocation } = await import('@capacitor/geolocation');
-        await Geolocation.requestPermissions();
-        setIsLocationSharing(true);
-        localStorage.setItem('nahid_location_sharing', 'true');
+        const result = await Geolocation.requestPermissions();
+        if (result.location === 'granted') {
+          setIsLocationSharing(true);
+          localStorage.setItem('nahid_location_sharing', 'true');
+          setToastMessage('Location permission granted');
+        } else {
+          setToastMessage('Location permission denied');
+        }
       } else if (type === 'storage') {
         const { Filesystem } = await import('@capacitor/filesystem');
-        await Filesystem.requestPermissions();
+        const result = await Filesystem.requestPermissions();
+        if (result.publicStorage === 'granted') {
+          setToastMessage('Storage permission granted');
+        } else {
+          setToastMessage('Storage permission denied');
+        }
       } else if (type === ('overlay' as any)) {
-        setToastMessage('Redirecting to System Settings for Overlay permission...');
+        setToastMessage('Please enable "Display over other apps" in Android settings.');
         setShowToast(true);
-        // Simulated: In real Android, we use custom intents or native plugins
       } else if (type === ('battery' as any)) {
-        setToastMessage('Redirecting to Battery settings to ignore optimization...');
+        setToastMessage('Please disable battery optimization for Nahid AI.');
         setShowToast(true);
       }
-      setTimeout(checkAllPermissions, 500);
+      setTimeout(checkAllPermissions, 1000);
     } catch (e: any) {
-      setToastMessage(t('common.error') + ": " + e.message);
+      setToastMessage("Permission Request Notice: Please check system settings.");
       setShowToast(true);
       setTimeout(() => setShowToast(false), 3000);
     }
@@ -1077,11 +1089,11 @@ export default function App() {
                               onClick={p.action}
                               className={`px-5 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shadow-lg ${
                                 p.status === 'enabled' 
-                                  ? 'bg-green-500/20 text-green-400 border border-green-500/20' 
-                                  : 'bg-blue-600 text-white shadow-blue-500/20 hover:bg-blue-500'
+                                  ? 'bg-red-600 text-white shadow-red-500/20' 
+                                  : 'bg-black text-white/50 border border-white/5 shadow-none'
                               }`}
                             >
-                              {p.status === 'enabled' ? t('permissions.enabled', { defaultValue: 'ENABLED' }) : t('permissions.grant', { defaultValue: 'GRANT' })}
+                              {p.status === 'enabled' ? t('permissions.enabled', { defaultValue: 'ACTIVE' }) : t('permissions.grant', { defaultValue: 'GRANT' })}
                             </button>
                           </div>
                         ))}
@@ -1093,10 +1105,22 @@ export default function App() {
                           <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">{t('permissions.systemControl', { defaultValue: 'Auto-System Control' })}</span>
                         </div>
                         <div className="flex items-center justify-between mt-3">
-                          <p className="text-[9px] text-white/20 leading-relaxed uppercase">{t('permissions.autoDesc', { defaultValue: 'AI can automatically adjust system brightness and volume.' })}</p>
-                          <div className="px-3 py-1 bg-cyan-500/10 border border-cyan-500/20 rounded-lg">
-                            <span className="text-[8px] font-black text-cyan-400 uppercase tracking-widest">{t('permissions.standby', { defaultValue: 'STANDBY' })}</span>
-                          </div>
+                          <p className="text-[9px] text-white/20 leading-relaxed uppercase pr-4">{t('permissions.autoDesc', { defaultValue: 'AI can automatically adjust system brightness and volume.' })}</p>
+                          <button 
+                            onClick={() => {
+                              const next = !autoSystemControl;
+                              setAutoSystemControl(next);
+                              localStorage.setItem('nahid_auto_system_control', next.toString());
+                              triggerHaptic();
+                            }}
+                            className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${
+                              autoSystemControl 
+                                ? 'bg-red-600 text-white' 
+                                : 'bg-black text-white/40 border border-white/5'
+                            }`}
+                          >
+                            {autoSystemControl ? 'ENABLED' : 'STANDBY'}
+                          </button>
                         </div>
                       </div>
                     </div>

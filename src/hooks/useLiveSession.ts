@@ -19,6 +19,7 @@ export function useLiveSession() {
   const audioStreamerRef = useRef<AudioStreamer | null>(null);
   const sessionRef = useRef<any>(null);
   const isMutedRef = useRef(false);
+  const isConnectedRef = useRef(false);
   const transcriptRef = useRef<{ role: 'user' | 'model'; text: string }[]>([]);
   const currentSessionIdRef = useRef<string | null>(null);
   const hasGeneratedTitleRef = useRef(false);
@@ -27,6 +28,10 @@ export function useLiveSession() {
   useEffect(() => {
     isMutedRef.current = isMuted;
   }, [isMuted]);
+
+  useEffect(() => {
+    isConnectedRef.current = isConnected;
+  }, [isConnected]);
 
   useEffect(() => {
     transcriptRef.current = transcript;
@@ -202,13 +207,15 @@ export function useLiveSession() {
       const sessionPromise = ai.live.connect({
         model: "gemini-3.1-flash-live-preview", 
         config: {
-          systemInstruction: `Identity: ${assistantName}. 
-          Friend: ${userProfile.nickName}. 
-          Creator: Mohammad Nahid.
-          Start every conversation with 'আসসালামু আলাইকুম'.
-          Language: Bengali.
-          ${prevContext ? `CONTEXT: ${prevContext}` : ""}
-          ${memoryData ? `MEMORY: ${memoryData}` : ""}`,
+          systemInstruction: `You are ${assistantName}, a helpful AI created by Mohammad Nahid.
+          Identity: ${assistantName}
+          User: ${userProfile.nickName}
+          Rules:
+          - Respond in Bengali (বাংলা) naturally.
+          - Start by saying 'আসসালামু আলাইকুম'.
+          - Be professional and helpful.
+          ${prevContext ? `CHAT HISTORY: ${prevContext}` : ""}
+          ${memoryData ? `USER MEMORY: ${memoryData}` : ""}`,
           responseModalities: [Modality.AUDIO],
           tools: [
             {
@@ -241,21 +248,33 @@ export function useLiveSession() {
             setIsConnected(true);
             setIsConnecting(false);
             
+          const greetText = resumeSession ? `আসসালামু আলাইকুম! আমরা যেখানে শেষ করেছিলাম সেখান থেকে শুরু করি?` : `আসসালামু আলাইকুম! আমি ${assistantName}, আপনার ব্যক্তিগত এআই। আমি তৈরি হয়েছি মোহাম্মদ নাহিদ-এর মাধ্যমে। আমাকে যেকোনো প্রশ্ন করতে পারেন।`;
+          
+          setTimeout(() => {
             sessionPromise.then(session => {
-              const greetText = resumeSession ? `আসসালামু আলাইকুম! আমরা যেখানে শেষ করেছিলাম সেখান থেকে শুরু করি?` : `আসসালামু আলাইকুম! Talk to ${userProfile.nickName} naturally in Bengali as ${assistantName}.`;
-              session.sendRealtimeInput({ text: greetText });
+              if (isConnectedRef.current) {
+                session.sendRealtimeInput({ text: greetText });
+              }
             });
+          }, 1000);
 
-            setTimeout(() => {
-              audioStreamerRef.current?.startMicrophone((base64Data) => {
-                if (!isMutedRef.current && sessionRef.current) {
+          setTimeout(() => {
+            audioStreamerRef.current?.startMicrophone((base64Data) => {
+              if (!isMutedRef.current && sessionRef.current && isConnectedRef.current) {
+                try {
                   sessionRef.current.sendRealtimeInput({
                     audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' }
                   });
+                } catch (e) {
+                  console.error("Audio streaming error:", e);
                 }
-              }).catch(disconnect);
-            }, 600);
-          },
+              }
+            }).catch(err => {
+              console.error("Mic start failed", err);
+              disconnect();
+            });
+          }, 1500);
+        },
           onmessage: async (message: any) => {
             // Handle Transcripts (User and Model)
             if (message.serverContent?.modelTurn?.parts) {

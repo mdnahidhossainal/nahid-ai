@@ -19,20 +19,21 @@ export const NahidLogo = ({ className }: { className?: string; interactive?: boo
       
       <div className="relative w-full h-full p-2 flex items-center justify-center">
         <img 
-          src="logo.png" 
+          src="/logo.png" 
           alt="Nahid AI Logo" 
           className="w-full h-full object-contain relative z-10"
           referrerPolicy="no-referrer"
           onError={(e) => {
-            // Fallback if image fails
+            // Fallback to simple text if image fails, NO MORE CLOCK
             e.currentTarget.style.display = 'none';
             const parent = e.currentTarget.parentElement;
             if (parent) {
               const fallback = document.createElement('div');
-              fallback.className = "flex flex-col items-center justify-center text-cyan-400 opacity-50";
+              fallback.className = "flex flex-col items-center justify-center text-blue-400";
               fallback.innerHTML = `
-                <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/><path d="M12 6v6l4 2"/></svg>
-                <span class="text-[10px] font-black mt-2">NAHID AI</span>
+                <div class="w-24 h-24 rounded-full border-2 border-blue-500/20 flex items-center justify-center">
+                   <span class="text-xs font-black tracking-tighter">NAHID</span>
+                </div>
               `;
               parent.appendChild(fallback);
             }
