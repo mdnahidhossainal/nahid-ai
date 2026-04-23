@@ -178,9 +178,19 @@ export function useLiveSession() {
       await new Promise(r => setTimeout(r, 100));
       
       // Request Microphone (Standard Web/Capacitor check)
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
+      let micErrorName = "";
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch((e) => {
+        micErrorName = e.name || "UnknownError";
+        console.error("Mic Permission Error:", e);
+        return null;
+      });
+
       if (!stream) {
-        setError("আপনার ফোনের মাইক্রোফোন পারমিশন বন্ধ আছে। অনুগ্রহ করে সেটিং থেকে পারমিশন চালু করে আবার চেষ্টা করুন। (Microphone Denied)");
+        if (micErrorName === "NotAllowedError") {
+          setError("আপনার ফোনের মাইক্রোফোন পারমিশন বন্ধ আছে। অনুগ্রহ করে সেটিং থেকে পারমিশন চালু করুন। যদি অলরেডি চালু থাকে তবে ব্রাউজারের সাইট সেটিংস চেক করুন। (NotAllowed)");
+        } else {
+          setError(`মাইক্রোফোন কানেক্ট করা যায়নি। (Error: ${micErrorName})`);
+        }
         setIsConnecting(false);
         return;
       }

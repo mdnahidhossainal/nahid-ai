@@ -123,9 +123,9 @@ export default function App() {
   useEffect(() => {
     const checkVersion = async () => {
       try {
-        const response = await fetch(VERSION_CHECK_URL);
-        if (!response.ok) {
-          console.warn("Version check skipped: Server returned status " + response.status);
+        const response = await fetch(VERSION_CHECK_URL).catch(() => null);
+        if (!response || !response.ok) {
+          // If 404 or network error, just skip silently instead of showing warning in log overlay
           return;
         }
         
@@ -264,6 +264,16 @@ export default function App() {
           const { StatusBar, Style } = await import('@capacitor/status-bar');
           await StatusBar.setStyle({ style: Style.Dark });
           await StatusBar.setBackgroundColor({ color: '#000000' });
+          
+          // Fix for greyed out notifications: Create a channel
+          const { LocalNotifications } = await import('@capacitor/local-notifications');
+          await LocalNotifications.createChannel({
+            id: 'nahid_alerts',
+            name: 'Nahid AI Notifications',
+            description: 'Alerts and updates from your AI assistant',
+            importance: 3,
+            visibility: 1
+          }).catch(() => null);
         } catch (e) {}
 
         if (localStorage.getItem('nahid_biometric_enabled') === 'true') {
@@ -341,11 +351,18 @@ export default function App() {
       } catch (e) {}
 
       try {
-        if ('Notification' in window) {
-          const status = Notification.permission;
-          notificationsState = status === 'granted' ? 'enabled' : (status === 'denied' ? 'disabled' : 'prompt');
-        }
-      } catch (e) {}
+        const { LocalNotifications } = await import('@capacitor/local-notifications');
+        const notePerm = await LocalNotifications.checkPermissions();
+        notificationsState = notePerm.display === 'granted' ? 'enabled' : (notePerm.display === 'denied' ? 'disabled' : 'prompt');
+      } catch (e) {
+        // Fallback for web if no capacitor plugin
+        try {
+          if ('Notification' in window) {
+            const status = Notification.permission;
+            notificationsState = status === 'granted' ? 'enabled' : (status === 'denied' ? 'disabled' : 'prompt');
+          }
+        } catch (err) {}
+      }
 
       setPermStatus({
         mic: micState,
@@ -364,21 +381,42 @@ export default function App() {
     triggerHaptic();
     try {
       if (type === 'mic') {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
+        let errorName = "";
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch((e) => {
+          errorName = e.name || "Unknown";
+          return null;
+        });
+
         if (stream) {
           stream.getTracks().forEach(t => t.stop());
           setToastMessage(t('biometric.enabled', { defaultValue: 'Microphone access granted' }));
         } else {
-          setToastMessage('মাইক্রোফোন পারমিশন সিস্টেমে ব্লক করা। ফোনের সেটিং থেকে অনুমতি দিন।');
+          if (errorName === "NotAllowedError") {
+             setToastMessage('মাইক্রোফোন পারমিশন সিস্টেমে ব্লক করা। ফোনের সেটিং এবং ব্রাউজারের সাইট সেটিংস চেক করুন।');
+          } else {
+             setToastMessage(`মাইক্রোফোন ত্রুটি: ${errorName}`);
+          }
           setShowToast(true);
         }
       } else if (type === 'notifications') {
-        if ('Notification' in window) {
-          const result = await Notification.requestPermission();
-          if (result === 'granted') {
+        try {
+          const { LocalNotifications } = await import('@capacitor/local-notifications');
+          const result = await LocalNotifications.requestPermissions();
+          if (result.display === 'granted') {
              setToastMessage('Notification permission granted');
           } else {
              setToastMessage('Notification permission denied. Please allow in settings.');
+             setShowToast(true);
+          }
+        } catch (e) {
+          if ('Notification' in window) {
+            const result = await Notification.requestPermission();
+            if (result === 'granted') {
+               setToastMessage('Notification permission granted');
+            } else {
+               setToastMessage('Notification permission denied. Please allow in settings.');
+               setShowToast(true);
+            }
           }
         }
       } else if (type === 'location') {
@@ -1361,14 +1399,14 @@ export default function App() {
                 </div>
                 <button 
                   onClick={() => connect(assistantName, assistantVoice)}
-                  className="px-8 py-3 bg-white text-black rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all"
+                  className="px-8 py-3 bg-white text-black rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all outline-none"
                 >
                   আবার চেষ্টা করুন (Retry)
                 </button>
               </motion.div>
             ) : (
               <>
-                <h2 className="text-[13px] sm:text-[15px] font-black tracking-tighter leading-tight bg-clip-text text-transparent bg-gradient-to-b from-white to-white/60">
+                <h2 className="text-[13px] sm:text-[15px] font-black tracking-tighter leading-tight bg-clip-text text-white bg-gradient-to-b from-white to-white/60">
                   {isConnecting 
                     ? t('home.connecting') 
                     : isConnected 
@@ -1376,7 +1414,7 @@ export default function App() {
                       : `${t('home.greeting')} ${assistantName}`}
                 </h2>
                 
-                <p className="text-white/30 text-[7px] sm:text-[8px] leading-tight px-12 min-h-[1rem]">
+                <p className="text-white/40 text-[7px] sm:text-[9px] leading-tight px-12 min-h-[1rem]">
                   {isConnected 
                         ? (isMuted 
                             ? `${assistantName} ${t('home.privacyInfo')}` 

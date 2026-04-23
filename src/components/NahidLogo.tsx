@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
 
 export const NahidLogo = ({ className }: { className?: string; interactive?: boolean }) => {
+  const [imgError, setImgError] = useState(false);
+
   return (
     <div className={`${className} flex items-center justify-center relative overflow-visible`}>
       {/* Rotating Outer Rings (Wheel/Charaka Style) */}
@@ -18,27 +20,25 @@ export const NahidLogo = ({ className }: { className?: string; interactive?: boo
       />
       
       <div className="relative w-full h-full p-2 flex items-center justify-center">
-        <img 
-          src="/logo.png" 
-          alt="Nahid AI Logo" 
-          className="w-full h-full object-contain relative z-10"
-          referrerPolicy="no-referrer"
-          onError={(e) => {
-            // Fallback to simple text if image fails, NO MORE CLOCK
-            e.currentTarget.style.display = 'none';
-            const parent = e.currentTarget.parentElement;
-            if (parent) {
-              const fallback = document.createElement('div');
-              fallback.className = "flex flex-col items-center justify-center text-blue-400";
-              fallback.innerHTML = `
-                <div class="w-24 h-24 rounded-full border-2 border-blue-500/20 flex items-center justify-center">
-                   <span class="text-xs font-black tracking-tighter">NAHID</span>
-                </div>
-              `;
-              parent.appendChild(fallback);
-            }
-          }}
-        />
+        {!imgError ? (
+          <img 
+            src="/logo.png" 
+            alt="Nahid AI Logo" 
+            className="w-full h-full object-contain relative z-10"
+            referrerPolicy="no-referrer"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex flex-col items-center justify-center text-blue-400 relative z-10"
+          >
+            <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-full border-2 border-blue-500/30 flex items-center justify-center bg-blue-500/5 backdrop-blur-sm">
+               <span className="text-[10px] sm:text-xs font-black tracking-widest text-blue-400 shadow-blue-500/50 drop-shadow-md">NAHID</span>
+            </div>
+          </motion.div>
+        )}
       </div>
     </div>
   );
