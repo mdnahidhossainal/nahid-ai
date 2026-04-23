@@ -34,6 +34,7 @@
     "@types/three": "^0.184.0",
     "@vitejs/plugin-react": "^5.0.4",
     "capacitor-native-biometric": "^4.2.2",
+    "capacitor-voice-recorder": "^7.0.6",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "firebase": "^12.12.1",

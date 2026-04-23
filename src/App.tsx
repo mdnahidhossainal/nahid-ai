@@ -327,14 +327,24 @@ export default function App() {
       let notificationsState: any = 'unknown';
 
       try {
-        const micPermission = await navigator.permissions.query({ name: 'microphone' as any });
-        micState = micPermission.state === 'granted' ? 'enabled' : (micPermission.state === 'denied' ? 'disabled' : 'prompt');
-      } catch (e) {
-        // Fallback for mic if query is not supported
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
-        if (stream) {
+        const { VoiceRecorder } = await import('capacitor-voice-recorder');
+        const hasPerm = await VoiceRecorder.hasAudioRecordingPermission();
+        if (hasPerm.value) {
           micState = 'enabled';
-          stream.getTracks().forEach(t => t.stop());
+        } else {
+          micState = 'prompt';
+        }
+      } catch (e) {
+        // Fallback for mic if native plugin fails
+        try {
+          const micPermission = await navigator.permissions.query({ name: 'microphone' as any });
+          micState = micPermission.state === 'granted' ? 'enabled' : (micPermission.state === 'denied' ? 'disabled' : 'prompt');
+        } catch (err) {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
+          if (stream) {
+            micState = 'enabled';
+            stream.getTracks().forEach(t => t.stop());
+          }
         }
       }
 
@@ -381,22 +391,39 @@ export default function App() {
     triggerHaptic();
     try {
       if (type === 'mic') {
-        let errorName = "";
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch((e) => {
-          errorName = e.name || "Unknown";
-          return null;
-        });
-
-        if (stream) {
-          stream.getTracks().forEach(t => t.stop());
-          setToastMessage(t('biometric.enabled', { defaultValue: 'Microphone access granted' }));
-        } else {
-          if (errorName === "NotAllowedError") {
-             setToastMessage('মাইক্রোফোন পারমিশন সিস্টেমে ব্লক করা। ফোনের সেটিং এবং ব্রাউজারের সাইট সেটিংস চেক করুন।');
+        try {
+          const { VoiceRecorder } = await import('capacitor-voice-recorder');
+          const result = await VoiceRecorder.requestAudioRecordingPermission();
+          if (result.value) {
+            setToastMessage('Native Microphone access granted');
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
+            if (!stream) {
+               setToastMessage('অ্যান্ড্রয়েড পারমিশন দেওয়া হয়েছে, কিন্তু ওয়েবভিউ ব্লক করছে। MainActivity.java ফিক্স প্রয়োজন।');
+               setShowToast(true);
+            } else {
+               stream.getTracks().forEach(t => t.stop());
+            }
           } else {
-             setToastMessage(`মাইক্রোফোন ত্রুটি: ${errorName}`);
+            setToastMessage('Microphone permission denied by user (Native)');
+            setShowToast(true);
           }
-          setShowToast(true);
+        } catch (e) {
+          let errorName = "";
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch((e) => {
+            errorName = e.name || "Unknown";
+            return null;
+          });
+          if (stream) {
+            stream.getTracks().forEach(t => t.stop());
+            setToastMessage(t('biometric.enabled', { defaultValue: 'Microphone access granted' }));
+          } else {
+            if (errorName === "NotAllowedError") {
+               setToastMessage('মাইক্রোফোন পারমিশন সিস্টেমে ব্লক করা। ফোনের সেটিং এবং ব্রাউজারের সাইট সেটিংস চেক করুন।');
+            } else {
+               setToastMessage(`মাইক্রোফোন ত্রুটি: ${errorName}`);
+            }
+            setShowToast(true);
+          }
         }
       } else if (type === 'notifications') {
         try {

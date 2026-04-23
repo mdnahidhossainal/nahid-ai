@@ -174,29 +174,38 @@ export function useLiveSession() {
 
     // 1. Request/Verify Permissions FIRST
     try {
-      // Small delay to ensure any previous dialogs are cleared
       await new Promise(r => setTimeout(r, 100));
       
-      // Request Microphone (Standard Web/Capacitor check)
-      let micErrorName = "";
+      let hasNativePerm = false;
+      try {
+        const { VoiceRecorder } = await import('capacitor-voice-recorder');
+        const permStatus = await VoiceRecorder.hasAudioRecordingPermission();
+        if (!permStatus.value) {
+          const req = await VoiceRecorder.requestAudioRecordingPermission();
+          hasNativePerm = req.value;
+        } else {
+          hasNativePerm = true;
+        }
+      } catch (e) {
+        console.warn("Native VoiceRecorder check failed, falling back to Web", e);
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch((e) => {
-        micErrorName = e.name || "UnknownError";
-        console.error("Mic Permission Error:", e);
+        const errName = e.name || "UnknownError";
+        if (errName === "NotAllowedError") {
+          setError("মাইক্রোফোন পারমিশন ব্লক করা। অ্যান্ড্রয়েড সেটিংসে অনুমতি থাকলে MainActivity.java ফিক্স করুন। (WebView NotAllowed)");
+        } else {
+          setError(`মাইক্রোফোন ত্রুটি: ${errName}`);
+        }
         return null;
       });
 
       if (!stream) {
-        if (micErrorName === "NotAllowedError") {
-          setError("আপনার ফোনের মাইক্রোফোন পারমিশন বন্ধ আছে। অনুগ্রহ করে সেটিং থেকে পারমিশন চালু করুন। যদি অলরেডি চালু থাকে তবে ব্রাউজারের সাইট সেটিংস চেক করুন। (NotAllowed)");
-        } else {
-          setError(`মাইক্রোফোন কানেক্ট করা যায়নি। (Error: ${micErrorName})`);
-        }
         setIsConnecting(false);
         return;
       }
       stream.getTracks().forEach(t => t.stop());
 
-      // Try for Notifications if possible (Capacitor doesn't block but good practice)
       if ('Notification' in window && Notification.permission === 'default') {
         await Notification.requestPermission();
       }
