@@ -114,6 +114,7 @@ export default function App() {
     mic: 'unknown',
     storage: 'unknown',
     location: 'unknown',
+    notifications: 'unknown',
     overlay: 'unknown',
     battery: 'unknown'
   });
@@ -295,36 +296,91 @@ export default function App() {
   }, [showSettings, showHistory, currentUser]);
 
   useEffect(() => {
+    const handleActive = async () => {
+      const { App } = await import('@capacitor/app');
+      App.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) {
+          checkAllPermissions();
+        }
+      });
+    };
+    handleActive();
     checkAllPermissions();
   }, []);
 
   // Utility Functions
   const checkAllPermissions = async () => {
     try {
-      const micPermission = await navigator.permissions.query({ name: 'microphone' as any });
-      const { Geolocation } = await import('@capacitor/geolocation');
-      const locPerm = await Geolocation.checkPermissions();
-      const { Filesystem } = await import('@capacitor/filesystem');
-      const storePerm = await Filesystem.checkPermissions();
+      let micState: any = 'unknown';
+      let locState: any = 'unknown';
+      let storeState: any = 'unknown';
+      let notificationsState: any = 'unknown';
 
-      setPermStatus(prev => ({
-        ...prev,
-        mic: micPermission.state === 'granted' ? 'enabled' : (micPermission.state === 'denied' ? 'disabled' : 'prompt'),
-        location: locPerm.location === 'granted' ? 'enabled' : (locPerm.location === 'denied' ? 'disabled' : 'prompt'),
-        storage: storePerm.publicStorage === 'granted' ? 'enabled' : (storePerm.publicStorage === 'denied' ? 'disabled' : 'prompt')
-      }));
+      try {
+        const micPermission = await navigator.permissions.query({ name: 'microphone' as any });
+        micState = micPermission.state === 'granted' ? 'enabled' : (micPermission.state === 'denied' ? 'disabled' : 'prompt');
+      } catch (e) {
+        // Fallback for mic if query is not supported
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
+        if (stream) {
+          micState = 'enabled';
+          stream.getTracks().forEach(t => t.stop());
+        }
+      }
+
+      try {
+        const { Geolocation } = await import('@capacitor/geolocation');
+        const locPerm = await Geolocation.checkPermissions();
+        locState = locPerm.location === 'granted' ? 'enabled' : (locPerm.location === 'denied' ? 'disabled' : 'prompt');
+      } catch (e) {}
+
+      try {
+        const { Filesystem } = await import('@capacitor/filesystem');
+        const storePerm = await Filesystem.checkPermissions();
+        storeState = storePerm.publicStorage === 'granted' ? 'enabled' : (storePerm.publicStorage === 'denied' ? 'disabled' : 'prompt');
+      } catch (e) {}
+
+      try {
+        if ('Notification' in window) {
+          const status = Notification.permission;
+          notificationsState = status === 'granted' ? 'enabled' : (status === 'denied' ? 'disabled' : 'prompt');
+        }
+      } catch (e) {}
+
+      setPermStatus({
+        mic: micState,
+        location: locState,
+        storage: storeState,
+        notifications: notificationsState,
+        overlay: permStatus.overlay,
+        battery: permStatus.battery
+      });
     } catch (e) {
       console.error("Permission check failed", e);
     }
   };
 
-  const requestPerm = async (type: 'mic' | 'storage' | 'location' | 'overlay' | 'battery') => {
+  const requestPerm = async (type: 'mic' | 'storage' | 'location' | 'notifications' | 'overlay' | 'battery') => {
     triggerHaptic();
     try {
       if (type === 'mic') {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach(t => t.stop()); // Just trigger the OS popup
-        setToastMessage(t('biometric.enabled', { defaultValue: 'Microphone access granted' }));
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
+        if (stream) {
+          stream.getTracks().forEach(t => t.stop());
+          setToastMessage(t('biometric.enabled', { defaultValue: 'Microphone access granted' }));
+        } else {
+          setToastMessage('মাইক্রোফোন পারমিশন সিস্টেমে ব্লক করা। ফোনের সেটিং থেকে অনুমতি দিন।');
+          setShowToast(true);
+        }
+      } else if (type === 'notifications') {
+        if ('Notification' in window) {
+          const result = await Notification.requestPermission();
+          if (result === 'granted') {
+             setToastMessage('Notification permission granted');
+          } else {
+             setToastMessage('Notification permission denied. Please allow in settings.');
+          }
+        }
       } else if (type === 'location') {
         const { Geolocation } = await import('@capacitor/geolocation');
         const result = await Geolocation.requestPermissions();
@@ -350,7 +406,7 @@ export default function App() {
         setToastMessage('Please disable battery optimization for Nahid AI.');
         setShowToast(true);
       }
-      setTimeout(checkAllPermissions, 1000);
+      await checkAllPermissions();
     } catch (e: any) {
       setToastMessage("Permission Request Notice: Please check system settings.");
       setShowToast(true);
@@ -498,6 +554,14 @@ export default function App() {
       icon: Mic, 
       status: permStatus.mic,
       action: () => requestPerm('mic')
+    },
+    { 
+      id: 'notifications',
+      name: t('permissions.notifications', { defaultValue: 'Notifications' }), 
+      desc: t('permissions.notifDesc', { defaultValue: 'Get alerts even when app is in background' }),
+      icon: AudioLines, 
+      status: permStatus.notifications as any,
+      action: () => requestPerm('notifications')
     },
     { 
       id: 'storage',
@@ -1283,25 +1347,45 @@ export default function App() {
           {/* Privacy/Mute Pulsing Toggle - REMOVED from center */}
 
           {/* Text Feedback */}
-          <div className="mt-1 text-center space-y-0 max-w-xs relative z-20 pb-3 sm:pb-0">
-            <h2 className="text-[13px] sm:text-[15px] font-black tracking-tighter leading-tight bg-clip-text text-transparent bg-gradient-to-b from-white to-white/60 px-6">
-              {isConnecting 
-                ? t('home.connecting') 
-                : isConnected 
-                  ? (isMuted ? t('home.privacyActive') : (isSpeaking ? `${assistantName} ${t('home.speaking')}` : t('home.listening'))) 
-                  : `${t('home.greeting')} ${assistantName}`}
-            </h2>
-            
-            <p className="text-white/30 text-[7px] sm:text-[8px] leading-tight px-12 min-h-[1rem]">
-              {error 
-                ? <span className="text-red-400 font-bold">{error}। {t('home.errorText')}</span>
-                : (isConnected 
-                    ? (isMuted 
-                        ? `${assistantName} ${t('home.privacyInfo')}` 
-                        : t('home.readyToListen'))
-                    : t('home.fullAssistant'))
-              }
-            </p>
+          <div className="mt-1 text-center space-y-4 max-w-xs relative z-20 pb-3 sm:pb-0 px-6">
+            {error ? (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="space-y-4"
+              >
+                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl">
+                   <p className="text-[11px] font-bold text-red-400 leading-tight">
+                    {error}
+                   </p>
+                </div>
+                <button 
+                  onClick={() => connect(assistantName, assistantVoice)}
+                  className="px-8 py-3 bg-white text-black rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all"
+                >
+                  আবার চেষ্টা করুন (Retry)
+                </button>
+              </motion.div>
+            ) : (
+              <>
+                <h2 className="text-[13px] sm:text-[15px] font-black tracking-tighter leading-tight bg-clip-text text-transparent bg-gradient-to-b from-white to-white/60">
+                  {isConnecting 
+                    ? t('home.connecting') 
+                    : isConnected 
+                      ? (isMuted ? t('home.privacyActive') : (isSpeaking ? `${assistantName} ${t('home.speaking')}` : t('home.listening'))) 
+                      : `${t('home.greeting')} ${assistantName}`}
+                </h2>
+                
+                <p className="text-white/30 text-[7px] sm:text-[8px] leading-tight px-12 min-h-[1rem]">
+                  {isConnected 
+                        ? (isMuted 
+                            ? `${assistantName} ${t('home.privacyInfo')}` 
+                            : t('home.readyToListen'))
+                        : t('home.fullAssistant')
+                  }
+                </p>
+              </>
+            )}
           </div>
         </main>
 

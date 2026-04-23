@@ -180,7 +180,7 @@ export function useLiveSession() {
       // Request Microphone (Standard Web/Capacitor check)
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
       if (!stream) {
-        setError("মাইক্রোফোন ব্যবহারের অনুমতি নেই। অনুগ্রহ করে পারমিশন চেক করুন।");
+        setError("আপনার ফোনের মাইক্রোফোন পারমিশন বন্ধ আছে। অনুগ্রহ করে সেটিং থেকে পারমিশন চালু করে আবার চেষ্টা করুন। (Microphone Denied)");
         setIsConnecting(false);
         return;
       }
