@@ -33,6 +33,9 @@ import { useTranslation } from 'react-i18next';
  * Nahid AI - System Assistant Edition (3D Earth, Memory, History & Dynamic Name)
  * Mohammad Nahid Version
  */
+const APP_VERSION = "1.0.5";
+const VERSION_CHECK_URL = "https://raw.githubusercontent.com/nahidbdali07/nahid-ai/main/version.json";
+
 export default function App() {
   const { 
     isConnected, 
@@ -99,6 +102,8 @@ export default function App() {
   const [memories, setMemories] = useState<{ id: number; content: string; timestamp: string }[]>([]);
   const [history, setHistory] = useState<{ id: number; title: string; date: string; transcript: any[] }[]>([]);
   const [showSplash, setShowSplash] = useState(true);
+  const [isUpdateRequired, setIsUpdateRequired] = useState(false);
+  const [latestVersion, setLatestVersion] = useState("");
   const [isLocationSharing, setIsLocationSharing] = useState(() => localStorage.getItem('nahid_location_sharing') === 'true');
   const [biometricEnabled, setBiometricEnabled] = useState(() => localStorage.getItem('nahid_biometric_enabled') === 'true');
   const [autoSystemControl, setAutoSystemControl] = useState(() => localStorage.getItem('nahid_auto_system_control') === 'true');
@@ -113,6 +118,37 @@ export default function App() {
   });
 
   // Effect Hooks
+  useEffect(() => {
+    const checkVersion = async () => {
+      try {
+        const response = await fetch(VERSION_CHECK_URL);
+        const data = await response.json();
+        if (data.latest_version && data.latest_version !== APP_VERSION) {
+          // Compare versions (simple string comparison for now, or semantic)
+          // Usually version numbers are like 1.0.1
+          const current = APP_VERSION.split('.').map(Number);
+          const latest = data.latest_version.split('.').map(Number);
+          
+          let upgrade = false;
+          for (let i = 0; i < Math.max(current.length, latest.length); i++) {
+            const v1 = current[i] || 0;
+            const v2 = latest[i] || 0;
+            if (v2 > v1) { upgrade = true; break; }
+            if (v1 > v2) break;
+          }
+          
+          if (upgrade) {
+            setLatestVersion(data.latest_version);
+            setIsUpdateRequired(true);
+          }
+        }
+      } catch (e) {
+        console.error("Version check failed", e);
+      }
+    };
+    checkVersion();
+  }, []);
+
   useEffect(() => {
     document.documentElement.lang = i18nInstance.language;
   }, [i18nInstance.language]);
@@ -484,7 +520,50 @@ export default function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-black text-white font-sans selection:bg-blue-500/30 overflow-hidden flex flex-col relative text-[14px]">
+    <div className="min-h-screen bg-black text-white font-sans selection:bg-blue-500/30 overflow-hidden flex flex-col relative text-[11px]">
+      <AnimatePresence>
+        {isUpdateRequired && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="fixed inset-0 z-[5000] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-6 text-center"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="max-w-xs w-full p-8 bg-zinc-900 border border-white/10 rounded-[32px] shadow-2xl space-y-6"
+            >
+              <div className="w-16 h-16 bg-blue-600/20 rounded-2xl flex items-center justify-center mx-auto mb-2 animate-bounce">
+                <Zap className="w-8 h-8 text-blue-400 fill-blue-400" />
+              </div>
+              
+              <div className="space-y-2">
+                <h2 className="text-xl font-black uppercase tracking-widest text-white">Update Required</h2>
+                <p className="text-xs text-white/40 leading-relaxed uppercase">
+                  A new update ({latestVersion}) is available. Please contact Nahid Bhai to get the latest version.
+                </p>
+              </div>
+
+              <div className="py-4 border-y border-white/5">
+                 <p className="text-[10px] text-zinc-500 uppercase font-mono">Current: v{APP_VERSION}</p>
+              </div>
+
+              <button 
+                onClick={() => {
+                  triggerHaptic();
+                  window.open("https://t.me/+-rolJD4TnMhkYTRl", "_blank");
+                }}
+                className="w-full py-4 bg-white text-black rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-zinc-200 transition-all active:scale-95 shadow-xl shadow-white/5"
+              >
+                Contact Nahid Bhai
+              </button>
+              
+              <p className="text-[8px] text-white/10 uppercase tracking-widest">Access Restricted Until Updated</p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence mode="wait">
         {showSplash && (
           <motion.div
@@ -499,16 +578,16 @@ export default function App() {
               transition={{ duration: 0.8 }}
               className="relative flex flex-col items-center"
             >
-              <NahidLogo className="w-64 h-64 sm:w-96 sm:h-96" />
+              <NahidLogo className="w-48 h-48 sm:w-64 sm:h-64" />
             </motion.div>
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.8 }}
-              className="mt-12 text-center"
+              className="mt-8 text-center"
             >
-                <h2 className="text-3xl font-black tracking-[0.4em] uppercase italic text-white/90">Nahid AI</h2>
-                <p className="text-[10px] uppercase font-bold tracking-[0.6em] text-white/30 mt-4">{t('home.intelligenceEvolution')}</p>
+                <h2 className="text-xl font-black tracking-[0.4em] uppercase italic text-white/90">Nahid AI</h2>
+                <p className="text-[8px] uppercase font-bold tracking-[0.6em] text-white/30 mt-3">{t('home.intelligenceEvolution')}</p>
               </motion.div>
           </motion.div>
         )}
@@ -609,46 +688,46 @@ export default function App() {
       <div className="relative z-10 flex flex-col h-screen">
         
         {/* Header */}
-        <header className="p-4 sm:p-8 flex justify-between items-center bg-gradient-to-b from-black/50 to-transparent sticky top-0 z-50">
-          <div className="flex items-center gap-4">
+        <header className="p-3 sm:p-6 flex justify-between items-center bg-gradient-to-b from-black/50 to-transparent sticky top-0 z-50">
+          <div className="flex items-center gap-3">
             <button 
               onClick={() => setShowHistory(true)}
-              className="p-3 bg-white/5 backdrop-blur-lg border border-white/10 rounded-2xl hover:bg-white/10 transition-all active:scale-95 cursor-pointer"
+              className="p-2.5 bg-white/5 backdrop-blur-lg border border-white/10 rounded-xl hover:bg-white/10 transition-all active:scale-95 cursor-pointer"
             >
-              <Menu className="w-5 h-5 text-white/60" />
+              <Menu className="w-4 h-4 text-white/60" />
             </button>
             <motion.div 
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
-              className="flex items-center gap-3"
+              className="flex items-center gap-2"
             >
-              <div className="w-12 h-12 rounded-2xl bg-white/5 backdrop-blur-xl border border-white/10 flex items-center justify-center shadow-2xl">
-                <Zap className={`w-6 h-6 ${isConnected ? 'text-blue-400 fill-blue-400' : 'text-white/20'}`} />
+              <div className="w-10 h-10 rounded-xl bg-white/5 backdrop-blur-xl border border-white/10 flex items-center justify-center shadow-xl">
+                <Zap className={`w-5 h-5 ${isConnected ? 'text-blue-400 fill-blue-400' : 'text-white/20'}`} />
               </div>
               <div>
-                <h1 className="text-xl font-black tracking-tighter uppercase italic text-white/90">Nahid AI</h1>
-                <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-widest text-white/40">
-                  <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-blue-400 animate-pulse' : (isOnline ? 'bg-green-400' : 'bg-red-500')} `} />
-                  {isOnline ? 'Professional AI Ecosystem' : 'Offline Adaptive Mode'}
+                <h1 className="text-lg font-black tracking-tighter uppercase italic text-white/90 leading-none">Nahid AI</h1>
+                <div className="flex items-center gap-1 font-mono text-[8px] uppercase tracking-widest text-white/40 mt-0.5">
+                  <span className={`w-1 h-1 rounded-full ${isConnected ? 'bg-blue-400 animate-pulse' : (isOnline ? 'bg-green-400' : 'bg-red-500')} `} />
+                  {isOnline ? 'Active AI Ecosystem' : 'Offline Adaptive Mode'}
                 </div>
               </div>
             </motion.div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <button 
               onClick={startNewChat}
-              className="p-3 bg-white/5 backdrop-blur-lg border border-white/10 rounded-2xl hover:bg-white/10 transition-all active:scale-95 cursor-pointer flex items-center gap-2 group"
+              className="p-2.5 bg-white/5 backdrop-blur-lg border border-white/10 rounded-xl hover:bg-white/10 transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 group"
               title="New Chat"
             >
-              <PlusCircle className="w-5 h-5 text-blue-400 group-hover:scale-110 transition-transform" />
-              <span className="hidden xs:inline text-[10px] font-black uppercase tracking-widest text-blue-400">New Tab</span>
+              <PlusCircle className="w-4 h-4 text-blue-400 group-hover:scale-110 transition-transform" />
+              <span className="hidden xs:inline text-[9px] font-black uppercase tracking-widest text-blue-400">New</span>
             </button>
             <button 
               onClick={() => setShowSettings(true)}
-              className="p-3 bg-white/5 backdrop-blur-lg border border-white/10 rounded-2xl hover:bg-white/10 transition-all active:scale-95 cursor-pointer"
+              className="p-2.5 bg-white/5 backdrop-blur-lg border border-white/10 rounded-xl hover:bg-white/10 transition-all active:scale-95 cursor-pointer"
             >
-              <SettingsIcon className="w-5 h-5 text-white/60" />
+              <SettingsIcon className="w-4 h-4 text-white/60" />
             </button>
           </div>
         </header>
@@ -1085,16 +1164,17 @@ export default function App() {
                               </div>
                             </div>
 
-                            <button 
+                            <motion.button 
                               onClick={p.action}
+                              animate={p.status === 'enabled' ? { scale: [1, 1.05, 1], transition: { duration: 0.5, repeat: Infinity, repeatType: 'reverse' } } : { scale: 1 }}
                               className={`px-5 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shadow-lg ${
                                 p.status === 'enabled' 
-                                  ? 'bg-red-600 text-white shadow-red-500/20' 
+                                  ? 'bg-red-600 text-white shadow-red-500/20 ring-4 ring-red-600/20' 
                                   : 'bg-black text-white/50 border border-white/5 shadow-none'
                               }`}
                             >
                               {p.status === 'enabled' ? t('permissions.enabled', { defaultValue: 'ACTIVE' }) : t('permissions.grant', { defaultValue: 'GRANT' })}
-                            </button>
+                            </motion.button>
                           </div>
                         ))}
                       </div>
@@ -1242,12 +1322,12 @@ export default function App() {
           </AnimatePresence>
 
           {/* Interactive Logo Stage */}
-          <div className="w-full h-[50vh] sm:h-[65vh] flex items-center justify-center relative touch-none">
+          <div className="w-full h-[40vh] sm:h-[50vh] flex items-center justify-center relative touch-none">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 1 }}
-              className="relative w-80 h-80 sm:w-[500px] sm:h-[500px]"
+              className="relative w-56 h-56 sm:w-80 sm:h-80"
             >
               <NahidLogo className="w-full h-full" />
             </motion.div>
@@ -1272,8 +1352,8 @@ export default function App() {
           {/* Privacy/Mute Pulsing Toggle - REMOVED from center */}
 
           {/* Text Feedback */}
-          <div className="mt-8 text-center space-y-4 max-w-sm relative z-20 pb-12 sm:pb-0">
-            <h2 className="text-3xl sm:text-4xl font-black tracking-tighter leading-tight bg-clip-text text-transparent bg-gradient-to-b from-white to-white/50 px-4">
+          <div className="mt-4 text-center space-y-2 max-w-sm relative z-20 pb-8 sm:pb-0">
+            <h2 className="text-xl sm:text-2xl font-black tracking-tighter leading-tight bg-clip-text text-transparent bg-gradient-to-b from-white to-white/50 px-4">
               {isConnecting 
                 ? t('home.connecting') 
                 : isConnected 
@@ -1281,7 +1361,7 @@ export default function App() {
                   : `${t('home.greeting')} ${assistantName}`}
             </h2>
             
-            <p className="text-white/40 text-[12px] sm:text-sm leading-relaxed px-6 min-h-[3rem]">
+            <p className="text-white/40 text-[10px] sm:text-xs leading-relaxed px-6 min-h-[2rem]">
               {error 
                 ? <span className="text-red-400 font-bold">{error}। {t('home.errorText')}</span>
                 : (isConnected 
@@ -1295,8 +1375,8 @@ export default function App() {
         </main>
 
         {/* Global Control Bar */}
-        <footer className="p-6 sm:p-12 flex flex-col items-center gap-6 bg-gradient-to-t from-black/60 to-transparent">
-          <div className="w-full max-w-sm flex items-center gap-3">
+        <footer className="p-4 sm:p-8 flex flex-col items-center gap-4 bg-gradient-to-t from-black/60 to-transparent">
+          <div className="w-full max-w-xs flex items-center gap-3">
             {/* New Location for Mute Toggle */}
             <AnimatePresence>
               {isConnected && (
@@ -1307,13 +1387,13 @@ export default function App() {
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={toggleMute}
-                  className={`flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 rounded-3xl border-2 flex items-center justify-center transition-all duration-500 relative overflow-hidden ${
+                  className={`flex-shrink-0 w-12 h-12 sm:w-14 sm:h-14 rounded-2xl border-2 flex items-center justify-center transition-all duration-500 relative overflow-hidden ${
                     isMuted 
                     ? 'bg-orange-500/10 border-orange-500 text-orange-400' 
                     : 'bg-white/5 border-white/20 text-white/40 hover:border-white/40'
                   }`}
                 >
-                  {isMuted ? <ShieldAlert className="w-7 h-7 sm:w-8 sm:h-8" /> : <ShieldCheck className="w-7 h-7 sm:w-8 sm:h-8 opacity-40" />}
+                  {isMuted ? <ShieldAlert className="w-5 h-5 sm:w-6 sm:h-6" /> : <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 opacity-40" />}
                   {isMuted && (
                     <motion.div 
                       layoutId="mute-glow"
@@ -1332,7 +1412,7 @@ export default function App() {
                 isConnected ? disconnect() : connect();
               }}
               disabled={isConnecting}
-              className={`relative flex-1 py-5 sm:py-6 rounded-[28px] font-black text-[11px] sm:text-[12px] uppercase tracking-[0.2em] sm:tracking-[0.3em] transition-all flex items-center justify-center gap-4 cursor-pointer shadow-2xl ${
+              className={`relative flex-1 py-3.5 sm:py-4 rounded-2xl font-black text-[10px] sm:text-[11px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 cursor-pointer shadow-xl ${
                 isConnected 
                   ? 'bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20' 
                   : 'bg-white text-black hover:bg-zinc-100'
@@ -1352,24 +1432,12 @@ export default function App() {
       <AnimatePresence>
         {showToast && (
           <motion.div
-            initial={{ opacity: 0, y: 100, scale: 0.5, rotate: -5 }}
-            animate={{ 
-              opacity: 1, 
-              y: 0, 
-              scale: 1, 
-              rotate: 0,
-              transition: { type: 'spring', stiffness: 300, damping: 15 }
-            }}
-            exit={{ opacity: 0, y: 50, scale: 0.9, transition: { duration: 0.3 } }}
-            className="fixed bottom-12 left-1/2 -translate-x-1/2 z-[200] px-8 py-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-[24px] font-black text-sm uppercase tracking-widest shadow-[0_20px_60px_rgba(37,99,235,0.5)] flex items-center gap-4 border border-white/20"
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed top-12 left-1/2 -translate-x-1/2 z-[200] px-4 py-2 bg-zinc-900 text-white rounded-full text-[10px] font-bold uppercase tracking-widest shadow-xl border border-white/10"
           >
-            <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center animate-bounce">
-              <PlusCircle className="w-4 h-4 fill-white" />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[10px] opacity-60 leading-none mb-1">{i18nInstance.language === 'en' ? 'Nahid AI Update' : 'নাহিদ এআই আপডেট'}</span>
-              <span>{toastMessage}</span>
-            </div>
+            {toastMessage}
           </motion.div>
         )}
       </AnimatePresence>

@@ -107,5 +107,17 @@ export const DeviceControlService = {
       window.location.href = `sms:${phoneNumber}?body=${encodeURIComponent(message)}`;
       return true;
     }
+  },
+
+  // Web Search
+  async searchWeb(query: string) {
+    try {
+      const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+      await AppLauncher.openUrl({ url });
+      return true;
+    } catch (e) {
+      window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, '_blank');
+      return true;
+    }
   }
 };

@@ -207,13 +207,21 @@ export function useLiveSession() {
       const sessionPromise = ai.live.connect({
         model: "gemini-3.1-flash-live-preview", 
         config: {
-          systemInstruction: `You are ${assistantName}, a helpful AI created by Mohammad Nahid.
+          systemInstruction: `You are ${assistantName}, a professional Native AI Assistant created by Mohammad Nahid.
           Identity: ${assistantName}
           User: ${userProfile.nickName}
+          Capabilities: 
+          - You can strictly control the user's mobile device via tools.
+          - Use 'execute_system_command' for:
+            * Opening apps (action: 'open_app', target: 'facebook', 'youtube', 'settings', etc.)
+            * Sending SMS (action: 'send_sms', target: [phone], payload: [message])
+            * Making calls (action: 'make_call', target: [phone])
+            * Searching the web (action: 'search_web', payload: [query])
+            * Toggling flashlight (action: 'toggle_torch', payload: 'on'/'off')
           Rules:
-          - Respond in Bengali (বাংলা) naturally.
-          - Start by saying 'আসসালামু আলাইকুম'.
-          - Be professional and helpful.
+          - Always respond in Bengali (বাংলা) naturally.
+          - Start with 'আসসালামু আলাইকুম'.
+          - If the user asks to open an app, send a message, or search, ALWAYS use the tool immediately.
           ${prevContext ? `CHAT HISTORY: ${prevContext}` : ""}
           ${memoryData ? `USER MEMORY: ${memoryData}` : ""}`,
           responseModalities: [Modality.AUDIO],
@@ -298,43 +306,43 @@ export function useLiveSession() {
                     const { action, target, payload } = call.args;
 
                     // Handle Hardware/Device actions
-                    if (action === 'toggle_torch' || action === 'open_app' || action === 'get_device_status' || action === 'get_location' || action === 'make_call' || action === 'send_sms') {
-                      let hardwareResult: any = null;
-                      
-                      if (action === 'toggle_torch') {
-                        hardwareResult = await DeviceControlService.toggleTorch(payload === 'on');
-                      } else if (action === 'open_app') {
-                        hardwareResult = await DeviceControlService.openApp(target);
-                      } else if (action === 'get_device_status') {
-                        hardwareResult = await DeviceControlService.getSystemStatus();
-                      } else if (action === 'get_location') {
-                        hardwareResult = await DeviceControlService.getCurrentLocation();
-                      } else if (action === 'make_call') {
-                        hardwareResult = await DeviceControlService.makeCall(target);
-                      } else if (action === 'send_sms') {
-                        hardwareResult = await DeviceControlService.sendSMS(target, payload || "");
-                      }
+                    let hardwareResult: any = null;
+                    let handled = false;
 
-                      sessionRef.current?.sendToolResponse({
-                        functionResponses: [{
-                          name: "execute_system_command",
-                          id: call.id,
-                          response: { output: hardwareResult ? `Operation successful: ${JSON.stringify(hardwareResult)}` : "Operation failed or permission denied." }
-                        }]
-                      });
-                      continue;
-                    }
-                    
-                    // Action: send_whatsapp
-                    if (action === 'send_whatsapp') {
+                    if (action === 'toggle_torch') {
+                      hardwareResult = await DeviceControlService.toggleTorch(payload === 'on');
+                      handled = true;
+                    } else if (action === 'open_app') {
+                      hardwareResult = await DeviceControlService.openApp(target);
+                      handled = true;
+                    } else if (action === 'get_device_status') {
+                      hardwareResult = await DeviceControlService.getSystemStatus();
+                      handled = true;
+                    } else if (action === 'get_location') {
+                      hardwareResult = await DeviceControlService.getCurrentLocation();
+                      handled = true;
+                    } else if (action === 'make_call') {
+                      hardwareResult = await DeviceControlService.makeCall(target);
+                      handled = true;
+                    } else if (action === 'send_sms') {
+                      hardwareResult = await DeviceControlService.sendSMS(target, payload || "");
+                      handled = true;
+                    } else if (action === 'search_web') {
+                      hardwareResult = await DeviceControlService.searchWeb(payload || target || "");
+                      handled = true;
+                    } else if (action === 'send_whatsapp') {
                       const url = `https://wa.me/${target}?text=${encodeURIComponent(payload || "")}`;
                       window.open(url, '_blank');
-                      
+                      hardwareResult = "WhatsApp link opened";
+                      handled = true;
+                    }
+
+                    if (handled) {
                       sessionRef.current?.sendToolResponse({
                         functionResponses: [{
                           name: "execute_system_command",
                           id: call.id,
-                          response: { output: "WhatsApp opened with native link." }
+                          response: { output: hardwareResult !== null ? `Operation successful: ${action}` : "Operation failed." }
                         }]
                       });
                       continue;
