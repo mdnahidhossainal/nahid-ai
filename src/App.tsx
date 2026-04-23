@@ -119,6 +119,11 @@ export default function App() {
     battery: 'unknown'
   });
 
+  const [userEnabledPerms, setUserEnabledPerms] = useState<Record<string, boolean>>(() => {
+    const saved = localStorage.getItem('nahid_user_perms');
+    return saved ? JSON.parse(saved) : { mic: true, storage: true, location: true, notifications: true, overlay: true, battery: true };
+  });
+
   // Effect Hooks
   useEffect(() => {
     const checkVersion = async () => {
@@ -389,22 +394,38 @@ export default function App() {
 
   const requestPerm = async (type: 'mic' | 'storage' | 'location' | 'notifications' | 'overlay' | 'battery') => {
     triggerHaptic();
+
+    // Toggle software state
+    const isCurrentlyEnabled = userEnabledPerms[type];
+    const newPerms = { ...userEnabledPerms, [type]: !isCurrentlyEnabled };
+
+    if (isCurrentlyEnabled) {
+      // Deactivating in-app preference
+      setUserEnabledPerms(newPerms);
+      localStorage.setItem('nahid_user_perms', JSON.stringify(newPerms));
+      setToastMessage(`${t(`permissions.${type}`, { defaultValue: type })} বন্ধ করা হয়েছে`);
+      setShowToast(true);
+      return;
+    }
+
     try {
       if (type === 'mic') {
         try {
           const { VoiceRecorder } = await import('capacitor-voice-recorder');
           const result = await VoiceRecorder.requestAudioRecordingPermission();
           if (result.value) {
-            setToastMessage('Native Microphone access granted');
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
             if (!stream) {
                setToastMessage('অ্যান্ড্রয়েড পারমিশন দেওয়া হয়েছে, কিন্তু ওয়েবভিউ ব্লক করছে। MainActivity.java ফিক্স প্রয়োজন।');
                setShowToast(true);
             } else {
                stream.getTracks().forEach(t => t.stop());
+               setUserEnabledPerms(newPerms);
+               localStorage.setItem('nahid_user_perms', JSON.stringify(newPerms));
+               setToastMessage('মাইক্রোফোন চালু করা হয়েছে');
             }
           } else {
-            setToastMessage('Microphone permission denied by user (Native)');
+            setToastMessage('মাইক্রোফোন অনুমতি প্রত্যাখ্যান করা হয়েছে');
             setShowToast(true);
           }
         } catch (e) {
@@ -415,10 +436,12 @@ export default function App() {
           });
           if (stream) {
             stream.getTracks().forEach(t => t.stop());
-            setToastMessage(t('biometric.enabled', { defaultValue: 'Microphone access granted' }));
+            setUserEnabledPerms(newPerms);
+            localStorage.setItem('nahid_user_perms', JSON.stringify(newPerms));
+            setToastMessage('মাইক্রোফোন চালু করা হয়েছে');
           } else {
             if (errorName === "NotAllowedError") {
-               setToastMessage('মাইক্রোফোন পারমিশন সিস্টেমে ব্লক করা। ফোনের সেটিং এবং ব্রাউজারের সাইট সেটিংস চেক করুন।');
+               setToastMessage('মাইক্রোফোন পারমিশন সিস্টেমে ব্লক করা। ফোনের সেটিং এবং সাইট সেটিংস চেক করুন।');
             } else {
                setToastMessage(`মাইক্রোফোন ত্রুটি: ${errorName}`);
             }
@@ -430,18 +453,22 @@ export default function App() {
           const { LocalNotifications } = await import('@capacitor/local-notifications');
           const result = await LocalNotifications.requestPermissions();
           if (result.display === 'granted') {
-             setToastMessage('Notification permission granted');
+             setUserEnabledPerms(newPerms);
+             localStorage.setItem('nahid_user_perms', JSON.stringify(newPerms));
+             setToastMessage('নোটিফিকেশন চালু করা হয়েছে');
           } else {
-             setToastMessage('Notification permission denied. Please allow in settings.');
+             setToastMessage('নোটিফিকেশন অনুমতি পাওয়া যায়নি। সেটিং থেকে অ্যালাউ করুন।');
              setShowToast(true);
           }
         } catch (e) {
           if ('Notification' in window) {
             const result = await Notification.requestPermission();
             if (result === 'granted') {
-               setToastMessage('Notification permission granted');
+               setUserEnabledPerms(newPerms);
+               localStorage.setItem('nahid_user_perms', JSON.stringify(newPerms));
+               setToastMessage('নোটিফিকেশন চালু করা হয়েছে');
             } else {
-               setToastMessage('Notification permission denied. Please allow in settings.');
+               setToastMessage('নোটিফিকেশন অনুমতি পাওয়া যায়নি।');
                setShowToast(true);
             }
           }
@@ -452,30 +479,33 @@ export default function App() {
         if (result.location === 'granted') {
           setIsLocationSharing(true);
           localStorage.setItem('nahid_location_sharing', 'true');
-          setToastMessage('Location permission granted');
+          setUserEnabledPerms(newPerms);
+          localStorage.setItem('nahid_user_perms', JSON.stringify(newPerms));
+          setToastMessage('লোকেশন চালু করা হয়েছে');
         } else {
-          setToastMessage('Location permission denied');
+          setToastMessage('লোকেশন অনুমতি পাওয়া যায়নি');
         }
       } else if (type === 'storage') {
         const { Filesystem } = await import('@capacitor/filesystem');
         const result = await Filesystem.requestPermissions();
         if (result.publicStorage === 'granted') {
-          setToastMessage('Storage permission granted');
+          setUserEnabledPerms(newPerms);
+          localStorage.setItem('nahid_user_perms', JSON.stringify(newPerms));
+          setToastMessage('স্টোরেজ চালু করা হয়েছে');
         } else {
-          setToastMessage('Storage permission denied');
+          setToastMessage('স্টোরেজ অনুমতি পাওয়া যায়নি');
         }
-      } else if (type === ('overlay' as any)) {
-        setToastMessage('Please enable "Display over other apps" in Android settings.');
-        setShowToast(true);
-      } else if (type === ('battery' as any)) {
-        setToastMessage('Please disable battery optimization for Nahid AI.');
+      } else {
+        // Overlay/Battery or other
+        setUserEnabledPerms(newPerms);
+        localStorage.setItem('nahid_user_perms', JSON.stringify(newPerms));
+        setToastMessage(`${type} চালু করা হয়েছে`);
         setShowToast(true);
       }
       await checkAllPermissions();
     } catch (e: any) {
-      setToastMessage("Permission Request Notice: Please check system settings.");
+      setToastMessage("পারমিশন রিকোয়েস্ট ব্যর্থ হয়েছে। সিস্টেম সেটিং চেক করুন।");
       setShowToast(true);
-      setTimeout(() => setShowToast(false), 3000);
     }
   };
 
@@ -617,7 +647,7 @@ export default function App() {
       name: t('permissions.microphone'), 
       desc: t('permissions.voiceDesc', { defaultValue: 'Enable voice interaction for AI' }),
       icon: Mic, 
-      status: permStatus.mic,
+      status: (userEnabledPerms.mic && permStatus.mic === 'enabled') ? 'enabled' : 'disabled',
       action: () => requestPerm('mic')
     },
     { 
@@ -625,7 +655,7 @@ export default function App() {
       name: t('permissions.notifications', { defaultValue: 'Notifications' }), 
       desc: t('permissions.notifDesc', { defaultValue: 'Get alerts even when app is in background' }),
       icon: AudioLines, 
-      status: permStatus.notifications as any,
+      status: (userEnabledPerms.notifications && permStatus.notifications === 'enabled') ? 'enabled' : 'disabled',
       action: () => requestPerm('notifications')
     },
     { 
@@ -633,7 +663,7 @@ export default function App() {
       name: t('permissions.storage'), 
       desc: t('permissions.filesDesc', { defaultValue: 'Allow AI to save and read data files' }),
       icon: Database, 
-      status: permStatus.storage,
+      status: (userEnabledPerms.storage && permStatus.storage === 'enabled') ? 'enabled' : 'disabled',
       action: () => requestPerm('storage')
     },
     { 
@@ -641,7 +671,7 @@ export default function App() {
       name: t('permissions.location'), 
       desc: t('permissions.locationDesc'),
       icon: Shield, 
-      status: isLocationSharing && permStatus.location === 'enabled' ? 'enabled' : 'disabled',
+      status: (isLocationSharing && userEnabledPerms.location && permStatus.location === 'enabled') ? 'enabled' : 'disabled',
       action: () => requestPerm('location')
     },
     { 
@@ -649,7 +679,7 @@ export default function App() {
       name: t('permissions.overlay', { defaultValue: 'Display over other apps' }), 
       desc: t('permissions.overlayDesc', { defaultValue: 'Allow AI to show response on top of other apps' }),
       icon: Zap, 
-      status: permStatus.overlay,
+      status: (userEnabledPerms.overlay && permStatus.overlay === 'enabled') ? 'enabled' : 'disabled',
       action: () => requestPerm('overlay' as any)
     },
     { 
@@ -657,7 +687,7 @@ export default function App() {
       name: t('permissions.battery', { defaultValue: 'Battery Optimization' }), 
       desc: t('permissions.batteryDesc', { defaultValue: 'Disable battery saving for 24/7 background service' }),
       icon: Zap, 
-      status: permStatus.battery,
+      status: (userEnabledPerms.battery && permStatus.battery === 'enabled') ? 'enabled' : 'disabled',
       action: () => requestPerm('battery' as any)
     },
   ];
