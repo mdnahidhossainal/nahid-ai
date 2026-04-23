@@ -11,7 +11,7 @@ export class AudioStreamer {
   private activeNodes: AudioBufferSourceNode[] = [];
   private isProcessingPlayback = false;
   private nextStartTime = 0;
-  private initialBufferTime = 0.05; // Further reduced for lower latency
+  private initialBufferTime = 0.01; // Tiny buffer for sub-20ms latency
 
   constructor(private sampleRate: number = 16000) {}
 
@@ -20,11 +20,18 @@ export class AudioStreamer {
       this.audioContext = new AudioContext({ sampleRate: this.sampleRate });
     }
     
-    if (this.audioContext.state === 'suspended') {
-      await this.audioContext.resume();
+    try {
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
+    } catch (e) {
+      console.warn("AudioContext resume failed:", e);
     }
 
     try {
+      if (this.microphoneStream) {
+        this.stopMicrophone(); // Ensure previous is stopped
+      }
       this.microphoneStream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
           echoCancellation: true,
@@ -35,7 +42,7 @@ export class AudioStreamer {
       });
       this.source = this.audioContext.createMediaStreamSource(this.microphoneStream);
 
-      const bufferSize = 2048; // Slightly larger buffer for stability
+      const bufferSize = 1024; // Lower buffer for faster transmission (~64ms @ 16kHz)
       const scriptNode = this.audioContext.createScriptProcessor(bufferSize, 1, 1);
       
       scriptNode.onaudioprocess = (event) => {
@@ -45,16 +52,8 @@ export class AudioStreamer {
           pcmData[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7fff;
         }
         
-        // Fast conversion using TextDecoder or chunking, but for PCM btoa(String.fromCharCode) is standard
-        // Modern approach:
-        const buffer = pcmData.buffer;
-        const bytes = new Uint8Array(buffer);
-        let binary = '';
-        const len = bytes.byteLength;
-        for (let i = 0; i < len; i++) {
-          binary += String.fromCharCode(bytes[i]);
-        }
-        const base64 = btoa(binary);
+        // Highly optimized Base64 conversion for real-time streaming
+        const base64 = btoa(String.fromCharCode.apply(null, new Uint8Array(pcmData.buffer) as unknown as number[]));
         onAudioData(base64);
       };
 

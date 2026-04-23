@@ -3,6 +3,7 @@ import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { AudioStreamer } from '@/lib/audio-streamer';
 import { auth, saveSessionToCloud, addMemoryToCloud, updateSessionTitle } from '@/services/firebase';
 import { DeviceControlService } from '@/services/device';
+import { App } from '@capacitor/app';
 
 /**
  * useLiveSession - Custom hook for managing Gemini Live API session
@@ -20,9 +21,11 @@ export function useLiveSession() {
   const sessionRef = useRef<any>(null);
   const isMutedRef = useRef(false);
   const isConnectedRef = useRef(false);
+  const isInterruptedRef = useRef(false);
   const transcriptRef = useRef<{ role: 'user' | 'model'; text: string }[]>([]);
   const currentSessionIdRef = useRef<string | null>(null);
   const hasGeneratedTitleRef = useRef(false);
+  const reconnectAttemptsRef = useRef(0);
 
   // Sync refs with state
   useEffect(() => {
@@ -148,6 +151,10 @@ export function useLiveSession() {
   const connect = useCallback(async (currentName?: string, currentVoice?: string, resumeSession?: any) => {
     if (isConnecting || isConnected) return;
 
+    // Reset interruption flag on manual connect
+    isInterruptedRef.current = false;
+    reconnectAttemptsRef.current = 0;
+
     console.log("LOG: Attempting to connect to Gemini Live...");
     setIsConnecting(true);
     setError(null);
@@ -210,6 +217,7 @@ export function useLiveSession() {
           systemInstruction: `You are ${assistantName}, a professional Native AI Assistant created by Mohammad Nahid.
           Identity: ${assistantName}
           User: ${userProfile.nickName}
+          Current Time: ${new Date().toLocaleString()}
           Capabilities: 
           - You can strictly control the user's mobile device via tools.
           - Use 'execute_system_command' for:
@@ -218,13 +226,23 @@ export function useLiveSession() {
             * Making calls (action: 'make_call', target: [phone])
             * Searching the web (action: 'search_web', payload: [query])
             * Toggling flashlight (action: 'toggle_torch', payload: 'on'/'off')
-          Rules:
-          - Always respond in Bengali (বাংলা) naturally.
-          - Start with 'আসসালামু আলাইকুম'.
+          Strict Conversational Rules:
+          - Always respond in Bengali (বাংলা) naturally and concisely.
+          - DO NOT use mandatory introductory phrases or "Assalamu Alaikum" at the start of every message.
+          - BE DIRECT: Answer questions immediately and perform tasks without fluff.
+          - HONESTY: Never hallucinate or claim the user said something they didn't. Be strictly grounded in the current CHAT HISTORY.
+          - TIME AWARENESS: Use the provided 'Current Time' to understand how long it has been since the last message in CHAT HISTORY. Do not say "after a long time" if it was just minutes.
+          - MEMORY: Refer back to previous points in the current session accurately.
           - If the user asks to open an app, send a message, or search, ALWAYS use the tool immediately.
-          ${prevContext ? `CHAT HISTORY: ${prevContext}` : ""}
-          ${memoryData ? `USER MEMORY: ${memoryData}` : ""}`,
+          ${prevContext ? `CHAT HISTORY (Most Recent First): ${prevContext}` : ""}
+          ${memoryData ? `USER LONG-TERM MEMORY: ${memoryData}` : ""}`,
           responseModalities: [Modality.AUDIO],
+          voice_activity_detection: {
+            voice_config: {
+              pre_speak_duration: "0.1s",
+              post_speak_duration: "0.5s"
+            }
+          },
           tools: [
             {
               functionDeclarations: [
@@ -256,7 +274,7 @@ export function useLiveSession() {
             setIsConnected(true);
             setIsConnecting(false);
             
-          const greetText = resumeSession ? `আসসালামু আলাইকুম! আমরা যেখানে শেষ করেছিলাম সেখান থেকে শুরু করি?` : `আসসালামু আলাইকুম! আমি ${assistantName}, আপনার ব্যক্তিগত এআই। আমি তৈরি হয়েছি মোহাম্মদ নাহিদ-এর মাধ্যমে। আমাকে যেকোনো প্রশ্ন করতে পারেন।`;
+          const greetText = resumeSession ? `Hi! আমরা যেখানে শেষ করেছিলাম সেখান থেকে শুরু করি?` : `Hi! আমি ${assistantName}, আপনার ব্যক্তিগত এআই। আমি তৈরি হয়েছি মোহাম্মদ নাহিদ-এর মাধ্যমে। আমাকে যেকোনো প্রশ্ন করতে পারেন।`;
           
           setTimeout(() => {
             sessionPromise.then(session => {
@@ -406,6 +424,46 @@ export function useLiveSession() {
       disconnect();
     }
   }, [disconnect, isConnected, isConnecting]);
+
+  useEffect(() => {
+    const handleAppStateChange = async ({ isActive }: { isActive: boolean }) => {
+      console.log('App State Change:', isActive ? 'Active' : 'Inactive');
+      
+      if (!isActive) {
+        // App is backgrounded or a system dialog (permission) is visible
+        if (isConnectedRef.current) {
+          console.log("App backgrounded, keeping session alive if possible...");
+          isInterruptedRef.current = true;
+        }
+      } else {
+        // App is back in focus
+        if (isInterruptedRef.current) {
+          console.log("App resumed after interruption. Checking logic...");
+          isInterruptedRef.current = false;
+          
+          // Re-resume audio context if suspended
+          if (audioStreamerRef.current) {
+             const streamer = audioStreamerRef.current;
+             // We don't have a direct resume() but starting mic again or checking context state helps
+             // In fact, most browsers resume audio on focus, but we can be explicit
+          }
+
+          // If session died during interruption, try to reconnect ONCE
+          if (!isConnectedRef.current && reconnectAttemptsRef.current < 1) {
+            reconnectAttemptsRef.current++;
+            console.log("Attempting silent reconnect after interruption...");
+            // Add a small delay to let system finish permission/lifecycle transitions
+            setTimeout(() => {
+               connect(undefined, undefined, { id: currentSessionIdRef.current, transcript: transcriptRef.current });
+            }, 500);
+          }
+        }
+      }
+    };
+
+    const listener = App.addListener('appStateChange', handleAppStateChange);
+    return () => { listener.then(l => l.remove()); };
+  }, [connect]);
 
   useEffect(() => {
     return () => { if (isConnected) disconnect(); };

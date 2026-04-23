@@ -122,8 +122,21 @@ export default function App() {
     const checkVersion = async () => {
       try {
         const response = await fetch(VERSION_CHECK_URL);
-        const data = await response.json();
-        if (data.latest_version && data.latest_version !== APP_VERSION) {
+        if (!response.ok) {
+          console.warn("Version check skipped: Server returned status " + response.status);
+          return;
+        }
+        
+        const text = await response.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (je) {
+          console.warn("Version check failed: Response is not valid JSON.");
+          return;
+        }
+
+        if (data && data.latest_version && data.latest_version !== APP_VERSION) {
           // Compare versions (simple string comparison for now, or semantic)
           // Usually version numbers are like 1.0.1
           const current = APP_VERSION.split('.').map(Number);
@@ -520,7 +533,7 @@ export default function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-black text-white font-sans selection:bg-blue-500/30 overflow-hidden flex flex-col relative text-[11px]">
+    <div className="min-h-screen bg-black text-white font-sans selection:bg-blue-500/30 overflow-hidden flex flex-col relative text-[10px]">
       <AnimatePresence>
         {isUpdateRequired && (
           <motion.div
@@ -688,46 +701,46 @@ export default function App() {
       <div className="relative z-10 flex flex-col h-screen">
         
         {/* Header */}
-        <header className="p-3 sm:p-6 flex justify-between items-center bg-gradient-to-b from-black/50 to-transparent sticky top-0 z-50">
-          <div className="flex items-center gap-3">
+        <header className="p-2.5 sm:p-5 flex justify-between items-center bg-gradient-to-b from-black/50 to-transparent sticky top-0 z-50">
+          <div className="flex items-center gap-2">
             <button 
               onClick={() => setShowHistory(true)}
-              className="p-2.5 bg-white/5 backdrop-blur-lg border border-white/10 rounded-xl hover:bg-white/10 transition-all active:scale-95 cursor-pointer"
+              className="p-2 bg-white/5 backdrop-blur-lg border border-white/10 rounded-lg hover:bg-white/10 transition-all active:scale-95 cursor-pointer"
             >
-              <Menu className="w-4 h-4 text-white/60" />
+              <Menu className="w-3.5 h-3.5 text-white/60" />
             </button>
             <motion.div 
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
-              className="flex items-center gap-2"
+              className="flex items-center gap-1.5"
             >
-              <div className="w-10 h-10 rounded-xl bg-white/5 backdrop-blur-xl border border-white/10 flex items-center justify-center shadow-xl">
-                <Zap className={`w-5 h-5 ${isConnected ? 'text-blue-400 fill-blue-400' : 'text-white/20'}`} />
+              <div className="w-8 h-8 rounded-lg bg-white/5 backdrop-blur-xl border border-white/10 flex items-center justify-center shadow-lg">
+                <Zap className={`w-4 h-4 ${isConnected ? 'text-blue-400 fill-blue-400' : 'text-white/20'}`} />
               </div>
               <div>
-                <h1 className="text-lg font-black tracking-tighter uppercase italic text-white/90 leading-none">Nahid AI</h1>
-                <div className="flex items-center gap-1 font-mono text-[8px] uppercase tracking-widest text-white/40 mt-0.5">
+                <h1 className="text-sm font-black tracking-tighter uppercase italic text-white/90 leading-none">Nahid AI</h1>
+                <div className="flex items-center gap-0.5 font-mono text-[7px] uppercase tracking-widest text-white/40 mt-0.5">
                   <span className={`w-1 h-1 rounded-full ${isConnected ? 'bg-blue-400 animate-pulse' : (isOnline ? 'bg-green-400' : 'bg-red-500')} `} />
-                  {isOnline ? 'Active AI Ecosystem' : 'Offline Adaptive Mode'}
+                  {isOnline ? 'Ecosystem Active' : 'Offline Mode'}
                 </div>
               </div>
             </motion.div>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <button 
               onClick={startNewChat}
-              className="p-2.5 bg-white/5 backdrop-blur-lg border border-white/10 rounded-xl hover:bg-white/10 transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 group"
+              className="p-2 bg-white/5 backdrop-blur-lg border border-white/10 rounded-lg hover:bg-white/10 transition-all active:scale-95 cursor-pointer flex items-center gap-1 group"
               title="New Chat"
             >
-              <PlusCircle className="w-4 h-4 text-blue-400 group-hover:scale-110 transition-transform" />
-              <span className="hidden xs:inline text-[9px] font-black uppercase tracking-widest text-blue-400">New</span>
+              <PlusCircle className="w-3.5 h-3.5 text-blue-400 group-hover:scale-110 transition-transform" />
+              <span className="hidden xs:inline text-[8px] font-black uppercase tracking-widest text-blue-400">New</span>
             </button>
             <button 
               onClick={() => setShowSettings(true)}
-              className="p-2.5 bg-white/5 backdrop-blur-lg border border-white/10 rounded-xl hover:bg-white/10 transition-all active:scale-95 cursor-pointer"
+              className="p-2 bg-white/5 backdrop-blur-lg border border-white/10 rounded-lg hover:bg-white/10 transition-all active:scale-95 cursor-pointer"
             >
-              <SettingsIcon className="w-4 h-4 text-white/60" />
+              <SettingsIcon className="w-3.5 h-3.5 text-white/60" />
             </button>
           </div>
         </header>
@@ -779,73 +792,73 @@ export default function App() {
                   </button>
                   <button 
                     onClick={() => setActiveTab('language')}
-                    className={`flex-shrink-0 snap-center min-w-[110px] py-4 px-6 flex flex-col items-center justify-center gap-3 rounded-[24px] transition-all duration-300 ${activeTab === 'language' ? 'bg-blue-600 shadow-lg shadow-blue-500/20 text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
+                    className={`flex-shrink-0 snap-center min-w-[90px] py-3 px-4 flex flex-col items-center justify-center gap-2 rounded-xl transition-all duration-300 ${activeTab === 'language' ? 'bg-blue-600 shadow-md text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
                   >
-                    <Globe className="w-5 h-5" />
-                    <span className="text-[12px] font-black uppercase tracking-wider">{i18nInstance.language === 'en' ? 'Language' : 'ভাষা'}</span>
+                    <Globe className="w-4 h-4" />
+                    <span className="text-[10px] font-black uppercase tracking-wider">{i18nInstance.language === 'en' ? 'Language' : 'ভাষা'}</span>
                   </button>
                   <button 
                     onClick={() => setActiveTab('memory')}
-                    className={`flex-shrink-0 snap-center min-w-[110px] py-4 px-6 flex flex-col items-center justify-center gap-3 rounded-[24px] transition-all duration-300 ${activeTab === 'memory' ? 'bg-blue-600 shadow-lg shadow-blue-500/20 text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
+                    className={`flex-shrink-0 snap-center min-w-[90px] py-3 px-4 flex flex-col items-center justify-center gap-2 rounded-xl transition-all duration-300 ${activeTab === 'memory' ? 'bg-blue-600 shadow-md text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
                   >
-                    <Brain className="w-5 h-5" />
-                    <span className="text-[12px] font-black uppercase tracking-wider">{t('nav.memory')}</span>
+                    <Brain className="w-4 h-4" />
+                    <span className="text-[10px] font-black uppercase tracking-wider">{t('nav.memory')}</span>
                   </button>
                   <button 
                     onClick={() => setActiveTab('hybrid')}
-                    className={`flex-shrink-0 snap-center min-w-[110px] py-4 px-6 flex flex-col items-center justify-center gap-3 rounded-[24px] transition-all duration-300 ${activeTab === 'hybrid' ? 'bg-blue-600 shadow-lg shadow-blue-500/20 text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
+                    className={`flex-shrink-0 snap-center min-w-[90px] py-3 px-4 flex flex-col items-center justify-center gap-2 rounded-xl transition-all duration-300 ${activeTab === 'hybrid' ? 'bg-blue-600 shadow-md text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
                   >
-                    <Zap className="w-5 h-5" />
-                    <span className="text-[12px] font-black uppercase tracking-wider">{t('nav.hybrid')}</span>
+                    <Zap className="w-4 h-4" />
+                    <span className="text-[10px] font-black uppercase tracking-wider">{t('nav.hybrid')}</span>
                   </button>
                   <button 
                     onClick={() => setActiveTab('api')}
-                    className={`flex-shrink-0 snap-center min-w-[110px] py-4 px-6 flex flex-col items-center justify-center gap-3 rounded-[24px] transition-all duration-300 ${activeTab === 'api' ? 'bg-blue-600 shadow-lg shadow-blue-500/20 text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
+                    className={`flex-shrink-0 snap-center min-w-[90px] py-3 px-4 flex flex-col items-center justify-center gap-2 rounded-xl transition-all duration-300 ${activeTab === 'api' ? 'bg-blue-600 shadow-md text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
                   >
-                    <Database className="w-5 h-5" />
-                    <span className="text-[12px] font-black uppercase tracking-wider">{t('nav.api')}</span>
+                    <Database className="w-4 h-4" />
+                    <span className="text-[10px] font-black uppercase tracking-wider">{t('nav.api')}</span>
                   </button>
                   <button 
                     onClick={() => setActiveTab('permissions')}
-                    className={`flex-shrink-0 snap-center min-w-[110px] py-4 px-6 flex flex-col items-center justify-center gap-3 rounded-[24px] transition-all duration-300 ${activeTab === 'permissions' ? 'bg-blue-600 shadow-lg shadow-blue-500/20 text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
+                    className={`flex-shrink-0 snap-center min-w-[90px] py-3 px-4 flex flex-col items-center justify-center gap-2 rounded-xl transition-all duration-300 ${activeTab === 'permissions' ? 'bg-blue-600 shadow-md text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
                   >
-                    <Shield className="w-5 h-5" />
-                    <span className="text-[12px] font-black uppercase tracking-wider">{t('nav.permissions')}</span>
+                    <Shield className="w-4 h-4" />
+                    <span className="text-[10px] font-black uppercase tracking-wider">{t('nav.permissions')}</span>
                   </button>
                 </div>
 
-                <div className="p-8 flex-1 overflow-y-auto custom-scrollbar">
+                <div className="p-4 sm:p-6 flex-1 overflow-y-auto no-scrollbar">
                   {activeTab === 'profile' && (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-3 duration-400">
                       {/* Cloud Login Card */}
-                      <div className={`p-6 rounded-3xl border transition-all ${currentUser ? 'bg-green-600/10 border-green-500/20' : 'bg-blue-600/10 border-blue-500/20'}`}>
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-3">
+                      <div className={`p-4 rounded-xl border transition-all ${currentUser ? 'bg-green-600/10 border-green-500/20' : 'bg-blue-600/10 border-blue-500/20'}`}>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2.5">
                             {currentUser ? (
-                              <img src={currentUser.photoURL || ''} className="w-10 h-10 rounded-full border-2 border-green-500" />
+                              <img src={currentUser.photoURL || ''} className="w-8 h-8 rounded-full border border-green-500" />
                             ) : (
-                              <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center">
-                                <UserIcon className="w-5 h-5 text-white" />
+                              <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center">
+                                <UserIcon className="w-4 h-4 text-white" />
                               </div>
                             )}
                             <div>
-                               <h4 className="text-[11px] font-black uppercase tracking-widest leading-none mb-1">
+                               <h4 className="text-[10px] font-black uppercase tracking-widest leading-none mb-1">
                                  {currentUser ? 'Cloud Linked' : t('auth.guestMode')}
                                </h4>
-                               <p className="text-[9px] text-white/40 uppercase font-mono leading-none">
+                               <p className="text-[8px] text-white/40 uppercase font-mono leading-none">
                                  {currentUser ? currentUser.email : t('auth.signInToSync')}
                                </p>
                             </div>
                           </div>
                           {currentUser ? (
-                             <button onClick={handleLogout} className="p-2 hover:bg-red-400/10 rounded-xl text-red-400 transition-all">
-                               <LogOut className="w-5 h-5" />
+                             <button onClick={handleLogout} className="p-1.5 hover:bg-red-400/10 rounded-lg text-red-400 transition-all">
+                               <LogOut className="w-4 h-4" />
                              </button>
                           ) : (
                              <button 
                                onClick={handleLogin}
                                disabled={isAuthLoading}
-                               className="px-4 py-2 bg-blue-600 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2"
+                               className="px-3 py-1.5 bg-blue-600 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"
                              >
                                {isAuthLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <LogIn className="w-3 h-3" />}
                                {t('auth.login')}
@@ -856,7 +869,7 @@ export default function App() {
 
                       <div className="space-y-4">
                         <label className="text-[10px] uppercase tracking-[0.2em] font-black text-white/40">{t('auth.biometricLogin')}</label>
-                        <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/10">
+                        <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl border border-white/10">
                           <div className="flex items-center gap-3">
                             <Fingerprint className={`w-6 h-6 ${biometricEnabled ? 'text-blue-400' : 'text-white/20'}`} />
                             <div>
@@ -889,35 +902,35 @@ export default function App() {
                                 setShowToast(true);
                               }
                             }}
-                            className={`w-12 h-7 rounded-full p-1 transition-all flex ${biometricEnabled ? 'bg-blue-600 justify-end' : 'bg-white/10 justify-start'}`}
+                            className={`w-11 h-6 rounded-full p-1 transition-all flex ${biometricEnabled ? 'bg-blue-600 justify-end' : 'bg-white/10 justify-start'}`}
                           >
-                            <div className="h-5 w-5 rounded-full bg-white shadow-lg" />
+                            <div className="h-4 w-4 rounded-full bg-white shadow-lg" />
                           </button>
                         </div>
-                        <p className="text-[10px] text-white/30 italic px-2">{i18nInstance.language === 'bn' ? 'এটি চালু করলে আপনি অ্যাপ খোলার সময় আঙুলের ছাপ দিয়ে আনলক করতে পারবেন।' : 'Unlock the app with your fingerprint on launch.'}</p>
+                        <p className="text-[9px] text-white/30 italic px-2">{i18nInstance.language === 'bn' ? 'এটি চালু করলে আপনি অ্যাপ খোলার সময় আঙুলের ছাপ দিয়ে আনলক করতে পারবেন।' : 'Unlock the app with your fingerprint on launch.'}</p>
                       </div>
 
-                      <div className="space-y-4">
+                      <div className="space-y-2">
                         <label className="text-[10px] uppercase tracking-[0.2em] font-black text-white/40">{t('profile.userName')}</label>
                         <input 
                           type="text" 
                           value={profile.userName}
                           onChange={(e) => setProfile({ ...profile, userName: e.target.value })}
-                          className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 outline-none focus:border-blue-500/50 transition-all font-bold"
+                          className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500/50 transition-all font-bold text-xs"
                         />
                       </div>
-                      <div className="space-y-4">
+                      <div className="space-y-2">
                         <label className="text-[10px] uppercase tracking-[0.2em] font-black text-white/40">{t('profile.nickName')} ({t('profile.personalize')})</label>
                         <input 
                           type="text" 
                           value={profile.nickName}
                           onChange={(e) => setProfile({ ...profile, nickName: e.target.value })}
-                          className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 outline-none focus:border-blue-500/50 transition-all font-bold"
+                          className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500/50 transition-all font-bold text-xs"
                         />
                       </div>
                       <button 
                         onClick={saveProfile}
-                        className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] flex items-center justify-center gap-2 shadow-2xl shadow-blue-500/20"
+                        className="w-full py-3 bg-blue-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] flex items-center justify-center gap-2 shadow-xl shadow-blue-500/20"
                       >
                         <Save className="w-4 h-4" /> {t('common.save')} {t('nav.profile')}
                       </button>
@@ -925,58 +938,55 @@ export default function App() {
                   )}
 
                   {activeTab === 'assistant' && (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                      <div className="p-6 bg-blue-600/10 border border-blue-500/20 rounded-2xl space-y-2">
+                    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-400">
+                      <div className="p-4 bg-blue-600/5 border border-blue-500/10 rounded-xl space-y-1">
                         <h3 className="text-blue-400 font-black text-[10px] uppercase tracking-widest">{t('assistant.nameChange', { defaultValue: 'অ্যাসিস্ট্যান্ট নাম পরিবর্তন' })}</h3>
-                        <p className="text-[11px] text-white/50 leading-relaxed">
-                          {i18nInstance.language === 'bn' ? 'নিচের বক্সে আপনার অ্যাসিস্ট্যান্টের জন্য একটি নতুন নাম লিখুন। এটি অ্যাপের সব জায়গায় এবং চ্যাটেও আপডেট হয়ে যাবে।' : 'Change the name of your AI assistant. This will be updated everywhere.'}
+                        <p className="text-[9px] text-white/40 leading-tight">
+                          {i18nInstance.language === 'bn' ? 'নিচের বক্সে আপনার অ্যাসিস্ট্যান্টের জন্য একটি নতুন নাম লিখুন।' : 'Change the name of your AI assistant.'}
                         </p>
                       </div>
-                      <div className="space-y-4">
+                      <div className="space-y-2">
                         <label className="text-[10px] uppercase tracking-[0.2em] font-black text-white/40">{t('assistant.currentName', { defaultValue: 'Assistant Name' })}</label>
                         <input 
                           type="text" 
                           value={assistantName}
                           onChange={(e) => setAssistantName(e.target.value)}
-                          placeholder="EX: Nahid AI or Jarvis"
-                          className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 outline-none focus:border-blue-500/50 transition-all font-bold text-blue-400"
+                          placeholder="Nahid AI or Jarvis"
+                          className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500/50 transition-all font-bold text-blue-400 text-xs"
                         />
                       </div>
 
-                      <div className="space-y-4">
-                        <label className="text-[10px] uppercase tracking-[0.2em] font-black text-white/40">{t('assistant.wakeWord', { defaultValue: 'Custom Wake Word (Name to call AI)' })}</label>
-                        <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-2xl mb-4">
-                          <p className="text-[10px] text-yellow-200/70 italic">{i18nInstance.language === 'bn' ? 'এটি সেই নাম যা ধরে ডাকলে এআই স্বয়ংক্রিয়ভাবে উত্তর দেবে। যেমন: বন্ধু, জারিফ ইত্যাদি।' : 'When you call this name, AI will automatically wake up and reply.'}</p>
-                        </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] uppercase tracking-[0.2em] font-black text-white/40">{t('assistant.wakeWord')}</label>
                         <input 
                           type="text" 
                           value={wakeWord}
                           onChange={(e) => setWakeWord(e.target.value)}
-                          placeholder="EX: বন্ধু"
-                          className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 outline-none focus:border-yellow-500/50 transition-all font-bold text-yellow-400"
+                          placeholder="বন্ধু"
+                          className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-yellow-500/50 transition-all font-bold text-yellow-400 text-xs"
                         />
                       </div>
 
-                      <div className="flex items-center justify-between p-6 bg-white/5 rounded-[24px] border border-white/10">
-                        <div className="flex items-center gap-4">
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isAlwaysListening ? 'bg-green-600' : 'bg-white/10'}`}>
-                            <Mic className="w-6 h-6" />
+                      <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl border border-white/10">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${isAlwaysListening ? 'bg-green-600' : 'bg-white/10'}`}>
+                            <Mic className="w-5 h-5" />
                           </div>
                           <div>
-                            <p className="text-[11px] font-black uppercase tracking-widest">{t('permissions.alwaysListening', { defaultValue: 'Always Listening' })}</p>
-                            <p className="text-[9px] text-white/30 uppercase font-mono tracking-tighter">{t('permissions.bgService', { defaultValue: 'Background Foreground Service' })}</p>
+                            <p className="text-[10px] font-black uppercase tracking-widest">{t('permissions.alwaysListening')}</p>
+                            <p className="text-[8px] text-white/30 uppercase font-mono tracking-tighter">BG Service</p>
                           </div>
                         </div>
                         <button 
                           onClick={() => setIsAlwaysListening(!isAlwaysListening)}
-                          className={`w-12 h-7 rounded-full p-1 transition-all flex ${isAlwaysListening ? 'bg-green-600 justify-end' : 'bg-white/10 justify-start'}`}
+                          className={`w-11 h-6 rounded-full p-1 transition-all flex ${isAlwaysListening ? 'bg-green-600 justify-end' : 'bg-white/10 justify-start'}`}
                         >
-                          <div className="h-5 w-5 rounded-full bg-white shadow-lg" />
+                          <div className="h-4 w-4 rounded-full bg-white shadow-lg" />
                         </button>
                       </div>
                       <button 
                         onClick={saveProfile}
-                        className="w-full py-4 bg-white/10 text-white rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] flex items-center justify-center gap-2 border border-white/10"
+                        className="w-full py-3 bg-white/10 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] flex items-center justify-center gap-2 border border-white/10"
                       >
                         {t('common.save')} {t('nav.name')}
                       </button>
@@ -984,45 +994,38 @@ export default function App() {
                   )}
 
                   {activeTab === 'voice' && (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                      <div className="p-6 bg-indigo-600/10 border border-indigo-500/20 rounded-2xl space-y-2">
-                        <h3 className="text-indigo-400 font-black text-[10px] uppercase tracking-widest">{t('assistant.voiceSettings', { defaultValue: 'ভয়েস সেটিংস' })}</h3>
-                        <p className="text-[11px] text-white/50 leading-relaxed">
-                           {i18nInstance.language === 'bn' ? 'আপনার অ্যাসিস্ট্যান্টের জন্য একটি কণ্ঠস্বর নির্বাচন করুন। পুরুষ অথবা নারী কণ্ঠে কথা বলা শুরু করবে।' : 'Select a voice for your assistant. Choose between male and female tones.'}
-                        </p>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-400">
+                      <div className="grid grid-cols-2 gap-3">
                         <button 
                           onClick={() => handleVoiceChange('Puck')}
-                          className={`p-6 rounded-3xl border transition-all flex flex-col items-center gap-4 ${assistantVoice === 'Puck' ? 'bg-blue-600/20 border-blue-500' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+                          className={`p-4 rounded-xl border transition-all flex flex-col items-center gap-2 ${assistantVoice === 'Puck' ? 'bg-blue-600/20 border-blue-500' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
                         >
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${assistantVoice === 'Puck' ? 'bg-blue-600' : 'bg-white/10'}`}>
-                            <Volume2 className="w-6 h-6" />
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${assistantVoice === 'Puck' ? 'bg-blue-600' : 'bg-white/10'}`}>
+                            <Volume2 className="w-5 h-5" />
                           </div>
                           <div className="text-center">
-                            <span className="block font-black text-[11px] uppercase tracking-widest text-blue-400">Nahid AI (Male)</span>
-                            <span className="text-[9px] text-white/30 uppercase font-mono tracking-tighter">Professional Voice</span>
+                            <span className="block font-black text-[10px] uppercase tracking-widest text-blue-400">Nahid AI (Male)</span>
+                            <span className="text-[8px] text-white/30 uppercase font-mono tracking-tighter">Professional</span>
                           </div>
                         </button>
 
                         <button 
                           onClick={() => handleVoiceChange('Aoede')}
-                          className={`p-6 rounded-3xl border transition-all flex flex-col items-center gap-4 ${assistantVoice === 'Aoede' ? 'bg-pink-600/20 border-pink-500' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+                          className={`p-4 rounded-xl border transition-all flex flex-col items-center gap-2 ${assistantVoice === 'Aoede' ? 'bg-pink-600/20 border-pink-500' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
                         >
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${assistantVoice === 'Aoede' ? 'bg-pink-600' : 'bg-white/10'}`}>
-                            <Volume2 className="w-6 h-6" />
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${assistantVoice === 'Aoede' ? 'bg-pink-600' : 'bg-white/10'}`}>
+                            <Volume2 className="w-5 h-5" />
                           </div>
                           <div className="text-center">
-                            <span className="block font-black text-[11px] uppercase tracking-widest text-pink-400">Tania AI (Female)</span>
-                            <span className="text-[9px] text-white/30 uppercase font-mono tracking-tighter">Youthful Voice</span>
+                            <span className="block font-black text-[10px] uppercase tracking-widest text-pink-400">Tania AI (Female)</span>
+                            <span className="text-[8px] text-white/30 uppercase font-mono tracking-tighter">Youthful</span>
                           </div>
                         </button>
                       </div>
 
                       <button 
                         onClick={saveProfile}
-                        className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] flex items-center justify-center gap-2 shadow-2xl shadow-indigo-500/20"
+                        className="w-full py-3 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] flex items-center justify-center gap-2 shadow-xl"
                       >
                          {t('common.save')} {t('nav.voice')}
                       </button>
@@ -1063,44 +1066,34 @@ export default function App() {
                   )}
 
                   {activeTab === 'memory' && (
-                    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-400">
                       {memories.length > 0 ? (
                         memories.map((memory) => (
-                          <div key={memory.id} className="p-5 bg-white/5 rounded-2xl border border-white/5 group hover:border-white/10 transition-all">
+                          <div key={memory.id} className="p-3 bg-white/5 rounded-xl border border-white/5 group hover:border-white/10 transition-all">
                             <div className="flex justify-between items-start">
-                              <p className="font-medium flex-1 pr-4">{memory.content}</p>
+                              <p className="text-[10px] font-medium flex-1 pr-2">{memory.content}</p>
                               <button 
                                 onClick={() => deleteMemory(memory.id)}
-                                className="p-2 text-white/20 hover:text-red-400 hover:bg-red-400/10 rounded-xl transition-all"
+                                className="p-1.5 text-white/20 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
-                            <p className="text-[9px] text-white/20 mt-3 font-mono">{memory.timestamp}</p>
+                            <p className="text-[7px] text-white/20 mt-1.5 font-mono">{memory.timestamp}</p>
                           </div>
                         ))
                       ) : (
-                        <div className="h-64 flex flex-col items-center justify-center text-white/20">
-                          <Brain className="w-12 h-12 mb-4 opacity-5" />
-                          <p className="text-xs italic">{t('memory.empty')}</p>
+                        <div className="h-48 flex flex-col items-center justify-center text-white/20">
+                          <Brain className="w-8 h-8 mb-2 opacity-5" />
+                          <p className="text-[10px] italic">{t('memory.empty')}</p>
                         </div>
                       )}
                     </div>
                   )}
 
                    {activeTab === 'api' && (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                      <div className="flex items-center gap-4 mb-2">
-                        <div className="w-12 h-12 rounded-2xl bg-blue-600/20 flex items-center justify-center">
-                          <Database className="w-6 h-6 text-blue-400" />
-                        </div>
-                        <div>
-                          <h3 className="text-sm font-black uppercase tracking-wider text-white">{t('api.title')}</h3>
-                          <p className="text-[10px] text-white/40 uppercase tracking-widest">{t('api.subtitle')}</p>
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
+                    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-400">
+                      <div className="space-y-2">
                         <label className="text-[10px] uppercase tracking-[0.2em] font-black text-white/40">Gemini API Key</label>
                         <div className="relative group">
                           <input 
@@ -1108,16 +1101,9 @@ export default function App() {
                             value={geminiApiKey}
                             onChange={(e) => setGeminiApiKey(e.target.value)}
                             placeholder={t('api.placeholder')}
-                            className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 pr-12 outline-none focus:border-blue-500/50 transition-all font-mono text-sm"
+                            className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:border-blue-500/50 transition-all font-mono text-[10px]"
                           />
-                          <Database className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/20 group-focus-within:text-blue-500 transition-colors" />
                         </div>
-                        <p className="text-[9px] text-white/30 leading-relaxed uppercase bg-white/5 p-4 rounded-xl border border-white/5">
-                          {i18nInstance.language === 'en' 
-                            ? <span>If you don't have an API key, get one for free from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-blue-400 underline hover:text-blue-300">Google AI Studio</a>. It will be saved locally.</span>
-                            : <span>আপনার কাছে যদি এপিআই কি না থাকে, তবে <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-blue-400 underline hover:text-blue-300">গুগল এআই স্টুডিও</a> থেকে একটি ফ্রিতে নিন। এটি আপনার ডিভাইসে সেভ থাকবে।</span>
-                          }
-                        </p>
                       </div>
 
                       <button 
@@ -1125,84 +1111,36 @@ export default function App() {
                           localStorage.setItem('nahid_gemini_api_key', geminiApiKey);
                           setToastMessage(t('common.saved'));
                           setShowToast(true);
-                          setTimeout(() => setShowToast(false), 3000);
+                          setTimeout(() => setShowToast(false), 2000);
                         }}
-                        className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black uppercase tracking-[0.3em] py-5 rounded-2xl transition-all shadow-xl shadow-blue-900/20 active:scale-[0.98] flex items-center justify-center gap-3"
+                        className="w-full py-3 bg-blue-600 text-white rounded-xl font-black text-[10px] uppercase tracking-[0.2em] flex items-center justify-center gap-2 shadow-xl shadow-blue-500/20"
                       >
-                        <Save className="w-5 h-5" />
-                        {t('common.save')}
+                        <Save className="w-4 h-4" /> {t('common.save')}
                       </button>
                     </div>
                   )}
 
                   {activeTab === 'permissions' && (
-                    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 p-2">
-                      <div className="p-6 bg-blue-600/10 border border-blue-500/20 rounded-3xl mb-4">
-                        <h3 className="text-sm font-black uppercase tracking-widest text-blue-400 mb-1">{t('permissions.title', { defaultValue: 'Permission Center' })}</h3>
-                        <p className="text-[10px] text-white/40 uppercase tracking-tighter leading-relaxed">
-                          {t('permissions.subtitle', { defaultValue: 'Manage native android system features securely.' })}
-                        </p>
-                      </div>
-
-                      <div className="space-y-4">
-                        {permissionsUI.map((p) => (
-                          <div 
-                            key={p.id} 
-                            className="group p-5 bg-white/5 rounded-[28px] border border-white/5 hover:border-white/10 transition-all flex items-center justify-between gap-4"
-                          >
-                            <div className="flex items-center gap-4">
-                              <div className={`p-4 rounded-2xl ${p.status === 'enabled' ? 'bg-green-500/10 text-green-400' : 'bg-white/5 text-white/40 group-hover:text-white/60'} transition-all`}>
-                                <p.icon className="w-5 h-5" />
-                              </div>
-                              <div className="flex flex-col">
-                                <span className={`text-[12px] font-black uppercase tracking-wider ${p.status === 'enabled' ? 'text-white' : 'text-white/60'}`}>
-                                  {p.name}
-                                </span>
-                                <span className="text-[9px] text-white/20 uppercase font-mono tracking-tighter mt-0.5 line-clamp-1">
-                                  {p.desc}
-                                </span>
-                              </div>
+                    <div className="space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-400">
+                      {permissionsUI.map((p) => (
+                        <div key={p.id} className="p-3 bg-white/5 rounded-xl border border-white/5 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className={`p-2.5 rounded-lg ${p.status === 'enabled' ? 'bg-green-500/10 text-green-400' : 'bg-white/5 text-white/40'}`}>
+                              <p.icon className="w-4 h-4" />
                             </div>
-
-                            <motion.button 
-                              onClick={p.action}
-                              animate={p.status === 'enabled' ? { scale: [1, 1.05, 1], transition: { duration: 0.5, repeat: Infinity, repeatType: 'reverse' } } : { scale: 1 }}
-                              className={`px-5 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shadow-lg ${
-                                p.status === 'enabled' 
-                                  ? 'bg-red-600 text-white shadow-red-500/20 ring-4 ring-red-600/20' 
-                                  : 'bg-black text-white/50 border border-white/5 shadow-none'
-                              }`}
-                            >
-                              {p.status === 'enabled' ? t('permissions.enabled', { defaultValue: 'ACTIVE' }) : t('permissions.grant', { defaultValue: 'GRANT' })}
-                            </motion.button>
+                            <div>
+                               <p className="text-[10px] font-black uppercase tracking-widest text-white leading-tight">{p.name}</p>
+                               <p className="text-[8px] text-white/30 uppercase font-mono tracking-tighter line-clamp-1">{p.desc}</p>
+                            </div>
                           </div>
-                        ))}
-                      </div>
-
-                      <div className="p-5 bg-white/5 rounded-3xl border border-white/5 mt-6">
-                        <div className="flex items-center gap-3">
-                          <LayoutGrid className="w-4 h-4 text-cyan-400" />
-                          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">{t('permissions.systemControl', { defaultValue: 'Auto-System Control' })}</span>
-                        </div>
-                        <div className="flex items-center justify-between mt-3">
-                          <p className="text-[9px] text-white/20 leading-relaxed uppercase pr-4">{t('permissions.autoDesc', { defaultValue: 'AI can automatically adjust system brightness and volume.' })}</p>
                           <button 
-                            onClick={() => {
-                              const next = !autoSystemControl;
-                              setAutoSystemControl(next);
-                              localStorage.setItem('nahid_auto_system_control', next.toString());
-                              triggerHaptic();
-                            }}
-                            className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${
-                              autoSystemControl 
-                                ? 'bg-red-600 text-white' 
-                                : 'bg-black text-white/40 border border-white/5'
-                            }`}
+                            onClick={p.action}
+                            className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${p.status === 'enabled' ? 'bg-red-600 text-white' : 'bg-white text-black'}`}
                           >
-                            {autoSystemControl ? 'ENABLED' : 'STANDBY'}
+                            {p.status === 'enabled' ? 'Active' : 'Grant'}
                           </button>
                         </div>
-                      </div>
+                      ))}
                     </div>
                   )}
 
@@ -1322,12 +1260,12 @@ export default function App() {
           </AnimatePresence>
 
           {/* Interactive Logo Stage */}
-          <div className="w-full h-[40vh] sm:h-[50vh] flex items-center justify-center relative touch-none">
+          <div className="w-full h-[28vh] sm:h-[35vh] flex items-center justify-center relative touch-none">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 1 }}
-              className="relative w-56 h-56 sm:w-80 sm:h-80"
+              className="relative w-32 h-32 sm:w-40 sm:h-40"
             >
               <NahidLogo className="w-full h-full" />
             </motion.div>
@@ -1339,10 +1277,10 @@ export default function App() {
                    <motion.div 
                      initial={{ opacity: 0 }} 
                      animate={{ opacity: 1 }} 
-                     className="flex flex-col items-center gap-4"
+                     className="flex flex-col items-center gap-2"
                    >
-                     <Loader2 className="w-12 h-12 text-white animate-spin opacity-50" />
-                     <p className="text-[10px] uppercase tracking-[0.3em] font-black text-white/50">{t('home.initializing')}</p>
+                     <Loader2 className="w-8 h-8 text-white animate-spin opacity-30" />
+                     <p className="text-[7px] uppercase tracking-[0.3em] font-black text-white/30">{t('home.initializing')}</p>
                    </motion.div>
                 )}
               </AnimatePresence>
@@ -1352,8 +1290,8 @@ export default function App() {
           {/* Privacy/Mute Pulsing Toggle - REMOVED from center */}
 
           {/* Text Feedback */}
-          <div className="mt-4 text-center space-y-2 max-w-sm relative z-20 pb-8 sm:pb-0">
-            <h2 className="text-xl sm:text-2xl font-black tracking-tighter leading-tight bg-clip-text text-transparent bg-gradient-to-b from-white to-white/50 px-4">
+          <div className="mt-1 text-center space-y-0 max-w-xs relative z-20 pb-3 sm:pb-0">
+            <h2 className="text-[13px] sm:text-[15px] font-black tracking-tighter leading-tight bg-clip-text text-transparent bg-gradient-to-b from-white to-white/60 px-6">
               {isConnecting 
                 ? t('home.connecting') 
                 : isConnected 
@@ -1361,7 +1299,7 @@ export default function App() {
                   : `${t('home.greeting')} ${assistantName}`}
             </h2>
             
-            <p className="text-white/40 text-[10px] sm:text-xs leading-relaxed px-6 min-h-[2rem]">
+            <p className="text-white/30 text-[7px] sm:text-[8px] leading-tight px-12 min-h-[1rem]">
               {error 
                 ? <span className="text-red-400 font-bold">{error}। {t('home.errorText')}</span>
                 : (isConnected 
@@ -1375,8 +1313,8 @@ export default function App() {
         </main>
 
         {/* Global Control Bar */}
-        <footer className="p-4 sm:p-8 flex flex-col items-center gap-4 bg-gradient-to-t from-black/60 to-transparent">
-          <div className="w-full max-w-xs flex items-center gap-3">
+        <footer className="p-2 sm:p-4 flex flex-col items-center gap-3 bg-gradient-to-t from-black/80 to-transparent">
+          <div className="w-full max-w-[240px] flex items-center gap-2">
             {/* New Location for Mute Toggle */}
             <AnimatePresence>
               {isConnected && (
@@ -1387,13 +1325,13 @@ export default function App() {
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={toggleMute}
-                  className={`flex-shrink-0 w-12 h-12 sm:w-14 sm:h-14 rounded-2xl border-2 flex items-center justify-center transition-all duration-500 relative overflow-hidden ${
+                  className={`flex-shrink-0 w-7 h-7 sm:w-9 sm:h-9 rounded-md border flex items-center justify-center transition-all duration-500 relative overflow-hidden ${
                     isMuted 
                     ? 'bg-orange-500/10 border-orange-500 text-orange-400' 
-                    : 'bg-white/5 border-white/20 text-white/40 hover:border-white/40'
+                    : 'bg-white/5 border-white/20 text-white/30 hover:border-white/40'
                   }`}
                 >
-                  {isMuted ? <ShieldAlert className="w-5 h-5 sm:w-6 sm:h-6" /> : <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 opacity-40" />}
+                  {isMuted ? <ShieldAlert className="w-3 h-3 sm:w-4 sm:h-4" /> : <ShieldCheck className="w-3 h-3 sm:w-4 sm:h-4 opacity-30" />}
                   {isMuted && (
                     <motion.div 
                       layoutId="mute-glow"
@@ -1412,7 +1350,7 @@ export default function App() {
                 isConnected ? disconnect() : connect();
               }}
               disabled={isConnecting}
-              className={`relative flex-1 py-3.5 sm:py-4 rounded-2xl font-black text-[10px] sm:text-[11px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 cursor-pointer shadow-xl ${
+              className={`relative flex-1 py-2 sm:py-2.5 rounded-md font-black text-[7.5px] sm:text-[8.5px] uppercase tracking-[0.1em] transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md ${
                 isConnected 
                   ? 'bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20' 
                   : 'bg-white text-black hover:bg-zinc-100'
