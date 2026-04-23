@@ -4,6 +4,7 @@ import { AudioStreamer } from '@/lib/audio-streamer';
 import { auth, saveSessionToCloud, addMemoryToCloud, updateSessionTitle } from '@/services/firebase';
 import { DeviceControlService } from '@/services/device';
 import { App } from '@capacitor/app';
+import { KeepAwake } from '@capacitor-community/keep-awake';
 
 /**
  * useLiveSession - Custom hook for managing Gemini Live API session
@@ -26,6 +27,8 @@ export function useLiveSession() {
   const currentSessionIdRef = useRef<string | null>(null);
   const hasGeneratedTitleRef = useRef(false);
   const reconnectAttemptsRef = useRef(0);
+  const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
+  const lastActiveRef = useRef(Date.now());
 
   // Sync refs with state
   useEffect(() => {
@@ -102,6 +105,15 @@ export function useLiveSession() {
   const disconnect = useCallback(async () => {
     console.log("Disconnecting session...");
     
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+
+    try {
+      await KeepAwake.allowSleep();
+    } catch (e) {}
+
     const currentTranscript = transcriptRef.current;
     if (currentTranscript.length > 0) {
       // Local Backup
@@ -159,6 +171,35 @@ export function useLiveSession() {
     setIsConnecting(true);
     setError(null);
     setIsMuted(false);
+
+    // 1. Request/Verify Permissions FIRST
+    try {
+      // Small delay to ensure any previous dialogs are cleared
+      await new Promise(r => setTimeout(r, 100));
+      
+      // Request Microphone (Standard Web/Capacitor check)
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
+      if (!stream) {
+        setError("মাইক্রোফোন ব্যবহারের অনুমতি নেই। অনুগ্রহ করে পারমিশন চেক করুন।");
+        setIsConnecting(false);
+        return;
+      }
+      stream.getTracks().forEach(t => t.stop());
+
+      // Try for Notifications if possible (Capacitor doesn't block but good practice)
+      if ('Notification' in window && Notification.permission === 'default') {
+        await Notification.requestPermission();
+      }
+    } catch (e) {
+      console.warn("Permission pre-check failed:", e);
+    }
+
+    // 2. Enable "Foreground" (Keep Awake) behavior
+    try {
+      await KeepAwake.keepAwake();
+    } catch (e) {
+      console.warn("KeepAwake failed:", e);
+    }
     
     if (resumeSession) {
       setCurrentSessionId(resumeSession.id || resumeSession.id?.toString() || null);
@@ -211,7 +252,7 @@ export function useLiveSession() {
 
       console.log(`LOG: Connecting with voice: ${validatedVoice}, as: ${assistantName}`);
 
-      const sessionPromise = ai.live.connect({
+      const sessionPromise = (ai.live as any).connect({
         model: "gemini-3.1-flash-live-preview", 
         config: {
           systemInstruction: `You are ${assistantName}, a professional Native AI Assistant created by Mohammad Nahid.
@@ -273,6 +314,20 @@ export function useLiveSession() {
             clearTimeout(timeoutId);
             setIsConnected(true);
             setIsConnecting(false);
+            lastActiveRef.current = Date.now();
+
+            // Heartbeat Logic - Send a tiny silent audio or ping every 5 seconds to keep socket alive
+            heartbeatRef.current = setInterval(() => {
+              if (sessionRef.current && isConnectedRef.current) {
+                // Send an empty text input as heartbeat
+                try {
+                  sessionRef.current.sendRealtimeInput({ text: "" });
+                  console.log("HEARTBEAT: Sent ping to keep socket alive");
+                } catch (e) {
+                  console.warn("Heartbeat failed", e);
+                }
+              }
+            }, 5000);
             
           const greetText = resumeSession ? `Hi! আমরা যেখানে শেষ করেছিলাম সেখান থেকে শুরু করি?` : `Hi! আমি ${assistantName}, আপনার ব্যক্তিগত এআই। আমি তৈরি হয়েছি মোহাম্মদ নাহিদ-এর মাধ্যমে। আমাকে যেকোনো প্রশ্ন করতে পারেন।`;
           
@@ -434,28 +489,30 @@ export function useLiveSession() {
         if (isConnectedRef.current) {
           console.log("App backgrounded, keeping session alive if possible...");
           isInterruptedRef.current = true;
+          lastActiveRef.current = Date.now();
         }
       } else {
         // App is back in focus
-        if (isInterruptedRef.current) {
-          console.log("App resumed after interruption. Checking logic...");
+        if (isInterruptedRef.current || !isConnectedRef.current) {
+          console.log("App resumed. Checking session health...");
           isInterruptedRef.current = false;
           
           // Re-resume audio context if suspended
           if (audioStreamerRef.current) {
-             const streamer = audioStreamerRef.current;
-             // We don't have a direct resume() but starting mic again or checking context state helps
-             // In fact, most browsers resume audio on focus, but we can be explicit
+             try {
+                await audioStreamerRef.current.resume();
+             } catch (e) {}
           }
 
-          // If session died during interruption, try to reconnect ONCE
-          if (!isConnectedRef.current && reconnectAttemptsRef.current < 1) {
-            reconnectAttemptsRef.current++;
-            console.log("Attempting silent reconnect after interruption...");
-            // Add a small delay to let system finish permission/lifecycle transitions
+          // Silent Keep-Alive check: If focus was lost for more than 10 seconds and we are disconnected
+          // or if the socket appears stale, we hard reconnect.
+          const timeSinceLastActivity = Date.now() - lastActiveRef.current;
+          
+          if (!isConnectedRef.current && timeSinceLastActivity < 600000) { // Reconnect if less than 10 mins idle
+            console.log("Session lost during focus change (possibly system dialog). Silent Reconnecting...");
             setTimeout(() => {
                connect(undefined, undefined, { id: currentSessionIdRef.current, transcript: transcriptRef.current });
-            }, 500);
+            }, 300);
           }
         }
       }

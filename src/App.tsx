@@ -28,6 +28,7 @@ import { biometricService } from '@/services/biometricService';
 import { Fingerprint, Smartphone, Globe } from 'lucide-react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { useTranslation } from 'react-i18next';
+import { Toggle } from '@/components/Toggle';
 
 /**
  * Nahid AI - System Assistant Edition (3D Earth, Memory, History & Dynamic Name)
@@ -771,59 +772,59 @@ export default function App() {
                 <div className="flex overflow-x-auto border-b border-white/5 p-4 gap-4 no-scrollbar snap-x snap-mandatory cursor-grab active:cursor-grabbing">
                   <button 
                     onClick={() => setActiveTab('profile')}
-                    className={`flex-shrink-0 snap-center min-w-[110px] py-4 px-6 flex flex-col items-center justify-center gap-3 rounded-[24px] transition-all duration-300 ${activeTab === 'profile' ? 'bg-blue-600 shadow-lg shadow-blue-500/20 text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
+                    className={`flex-shrink-0 snap-center min-w-[70px] py-1.5 px-3 flex flex-col items-center justify-center gap-1 rounded-xl transition-all duration-300 ${activeTab === 'profile' ? 'bg-blue-600 shadow-md text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
                   >
-                    <UserIcon className="w-5 h-5" />
-                    <span className="text-[12px] font-black uppercase tracking-wider">{t('nav.profile')}</span>
+                    <UserIcon className="w-3.5 h-3.5" />
+                    <span className="text-[9px] font-black uppercase tracking-wider">{t('nav.profile')}</span>
                   </button>
                   <button 
                     onClick={() => setActiveTab('assistant')}
-                    className={`flex-shrink-0 snap-center min-w-[110px] py-4 px-6 flex flex-col items-center justify-center gap-3 rounded-[24px] transition-all duration-300 ${activeTab === 'assistant' ? 'bg-blue-600 shadow-lg shadow-blue-500/20 text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
+                    className={`flex-shrink-0 snap-center min-w-[70px] py-1.5 px-3 flex flex-col items-center justify-center gap-1 rounded-xl transition-all duration-300 ${activeTab === 'assistant' ? 'bg-blue-600 shadow-md text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
                   >
-                    <Bot className="w-5 h-5" />
-                    <span className="text-[12px] font-black uppercase tracking-wider">{t('nav.name')}</span>
+                    <Bot className="w-3.5 h-3.5" />
+                    <span className="text-[9px] font-black uppercase tracking-wider">{t('nav.name')}</span>
                   </button>
                   <button 
                     onClick={() => setActiveTab('voice')}
-                    className={`flex-shrink-0 snap-center min-w-[110px] py-4 px-6 flex flex-col items-center justify-center gap-3 rounded-[24px] transition-all duration-300 ${activeTab === 'voice' ? 'bg-blue-600 shadow-lg shadow-blue-500/20 text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
+                    className={`flex-shrink-0 snap-center min-w-[70px] py-1.5 px-3 flex flex-col items-center justify-center gap-1 rounded-xl transition-all duration-300 ${activeTab === 'voice' ? 'bg-blue-600 shadow-md text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
                   >
-                    <Volume2 className="w-5 h-5" />
-                    <span className="text-[12px] font-black uppercase tracking-wider">{t('nav.voice')}</span>
+                    <Volume2 className="w-3.5 h-3.5" />
+                    <span className="text-[9px] font-black uppercase tracking-wider">{t('nav.voice')}</span>
                   </button>
                   <button 
                     onClick={() => setActiveTab('language')}
-                    className={`flex-shrink-0 snap-center min-w-[90px] py-3 px-4 flex flex-col items-center justify-center gap-2 rounded-xl transition-all duration-300 ${activeTab === 'language' ? 'bg-blue-600 shadow-md text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
+                    className={`flex-shrink-0 snap-center min-w-[70px] py-1.5 px-3 flex flex-col items-center justify-center gap-1 rounded-xl transition-all duration-300 ${activeTab === 'language' ? 'bg-blue-600 shadow-md text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
                   >
-                    <Globe className="w-4 h-4" />
-                    <span className="text-[10px] font-black uppercase tracking-wider">{i18nInstance.language === 'en' ? 'Language' : 'ভাষা'}</span>
+                    <Globe className="w-3.5 h-3.5" />
+                    <span className="text-[9px] font-black uppercase tracking-wider">{i18nInstance.language === 'en' ? 'Language' : 'ভাষা'}</span>
                   </button>
                   <button 
                     onClick={() => setActiveTab('memory')}
-                    className={`flex-shrink-0 snap-center min-w-[90px] py-3 px-4 flex flex-col items-center justify-center gap-2 rounded-xl transition-all duration-300 ${activeTab === 'memory' ? 'bg-blue-600 shadow-md text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
+                    className={`flex-shrink-0 snap-center min-w-[70px] py-1.5 px-3 flex flex-col items-center justify-center gap-1 rounded-xl transition-all duration-300 ${activeTab === 'memory' ? 'bg-blue-600 shadow-md text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
                   >
-                    <Brain className="w-4 h-4" />
-                    <span className="text-[10px] font-black uppercase tracking-wider">{t('nav.memory')}</span>
+                    <Brain className="w-3.5 h-3.5" />
+                    <span className="text-[9px] font-black uppercase tracking-wider">{t('nav.memory')}</span>
                   </button>
                   <button 
                     onClick={() => setActiveTab('hybrid')}
-                    className={`flex-shrink-0 snap-center min-w-[90px] py-3 px-4 flex flex-col items-center justify-center gap-2 rounded-xl transition-all duration-300 ${activeTab === 'hybrid' ? 'bg-blue-600 shadow-md text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
+                    className={`flex-shrink-0 snap-center min-w-[70px] py-1.5 px-3 flex flex-col items-center justify-center gap-1 rounded-xl transition-all duration-300 ${activeTab === 'hybrid' ? 'bg-blue-600 shadow-md text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
                   >
-                    <Zap className="w-4 h-4" />
-                    <span className="text-[10px] font-black uppercase tracking-wider">{t('nav.hybrid')}</span>
+                    <Zap className="w-3.5 h-3.5" />
+                    <span className="text-[9px] font-black uppercase tracking-wider">{t('nav.hybrid')}</span>
                   </button>
                   <button 
                     onClick={() => setActiveTab('api')}
-                    className={`flex-shrink-0 snap-center min-w-[90px] py-3 px-4 flex flex-col items-center justify-center gap-2 rounded-xl transition-all duration-300 ${activeTab === 'api' ? 'bg-blue-600 shadow-md text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
+                    className={`flex-shrink-0 snap-center min-w-[70px] py-1.5 px-3 flex flex-col items-center justify-center gap-1 rounded-xl transition-all duration-300 ${activeTab === 'api' ? 'bg-blue-600 shadow-md text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
                   >
-                    <Database className="w-4 h-4" />
-                    <span className="text-[10px] font-black uppercase tracking-wider">{t('nav.api')}</span>
+                    <Database className="w-3.5 h-3.5" />
+                    <span className="text-[9px] font-black uppercase tracking-wider">{t('nav.api')}</span>
                   </button>
                   <button 
                     onClick={() => setActiveTab('permissions')}
-                    className={`flex-shrink-0 snap-center min-w-[90px] py-3 px-4 flex flex-col items-center justify-center gap-2 rounded-xl transition-all duration-300 ${activeTab === 'permissions' ? 'bg-blue-600 shadow-md text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
+                    className={`flex-shrink-0 snap-center min-w-[70px] py-1.5 px-3 flex flex-col items-center justify-center gap-1 rounded-xl transition-all duration-300 ${activeTab === 'permissions' ? 'bg-blue-600 shadow-md text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
                   >
-                    <Shield className="w-4 h-4" />
-                    <span className="text-[10px] font-black uppercase tracking-wider">{t('nav.permissions')}</span>
+                    <Shield className="w-3.5 h-3.5" />
+                    <span className="text-[9px] font-black uppercase tracking-wider">{t('nav.permissions')}</span>
                   </button>
                 </div>
 
@@ -877,8 +878,9 @@ export default function App() {
                                <p className="text-[9px] text-white/30 uppercase font-mono tracking-tighter">{t('auth.secureBiometric')}</p>
                             </div>
                           </div>
-                          <button 
-                            onClick={async () => {
+                          <Toggle 
+                            isOn={biometricEnabled} 
+                            onToggle={async () => {
                               if (!biometricEnabled) {
                                 const available = await biometricService.isAvailable();
                                 if (!available) {
@@ -902,10 +904,7 @@ export default function App() {
                                 setShowToast(true);
                               }
                             }}
-                            className={`w-11 h-6 rounded-full p-1 transition-all flex ${biometricEnabled ? 'bg-blue-600 justify-end' : 'bg-white/10 justify-start'}`}
-                          >
-                            <div className="h-4 w-4 rounded-full bg-white shadow-lg" />
-                          </button>
+                          />
                         </div>
                         <p className="text-[9px] text-white/30 italic px-2">{i18nInstance.language === 'bn' ? 'এটি চালু করলে আপনি অ্যাপ খোলার সময় আঙুলের ছাপ দিয়ে আনলক করতে পারবেন।' : 'Unlock the app with your fingerprint on launch.'}</p>
                       </div>
@@ -977,12 +976,10 @@ export default function App() {
                             <p className="text-[8px] text-white/30 uppercase font-mono tracking-tighter">BG Service</p>
                           </div>
                         </div>
-                        <button 
-                          onClick={() => setIsAlwaysListening(!isAlwaysListening)}
-                          className={`w-11 h-6 rounded-full p-1 transition-all flex ${isAlwaysListening ? 'bg-green-600 justify-end' : 'bg-white/10 justify-start'}`}
-                        >
-                          <div className="h-4 w-4 rounded-full bg-white shadow-lg" />
-                        </button>
+                        <Toggle 
+                          isOn={isAlwaysListening} 
+                          onToggle={() => setIsAlwaysListening(!isAlwaysListening)} 
+                        />
                       </div>
                       <button 
                         onClick={saveProfile}
@@ -1133,12 +1130,10 @@ export default function App() {
                                <p className="text-[8px] text-white/30 uppercase font-mono tracking-tighter line-clamp-1">{p.desc}</p>
                             </div>
                           </div>
-                          <button 
-                            onClick={p.action}
-                            className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${p.status === 'enabled' ? 'bg-red-600 text-white' : 'bg-white text-black'}`}
-                          >
-                            {p.status === 'enabled' ? 'Active' : 'Grant'}
-                          </button>
+                          <Toggle 
+                            isOn={p.status === 'enabled'} 
+                            onToggle={p.action} 
+                          />
                         </div>
                       ))}
                     </div>
@@ -1152,16 +1147,14 @@ export default function App() {
                              <h3 className="text-white font-black text-xs uppercase tracking-widest mb-1">{t('hybrid.title')}</h3>
                              <p className="text-[10px] text-white/40 uppercase font-mono tracking-tighter">{t('hybrid.subtitle')}</p>
                            </div>
-                           <button 
-                            onClick={() => {
-                              const next = !hybridEnabled;
-                              setHybridEnabled(next);
-                              localStorage.setItem('nahid_hybrid', next.toString());
-                            }}
-                            className={`w-14 h-8 rounded-full p-1 transition-all flex ${hybridEnabled ? 'bg-blue-500 justify-end' : 'bg-white/10 justify-start'}`}
-                           >
-                             <div className="h-6 w-6 rounded-full bg-white shadow-lg" />
-                           </button>
+                           <Toggle 
+                             isOn={hybridEnabled} 
+                             onToggle={() => {
+                               const next = !hybridEnabled;
+                               setHybridEnabled(next);
+                               localStorage.setItem('nahid_hybrid', next.toString());
+                             }}
+                           />
                         </div>
                         
                         <div className="h-[1px] bg-white/5" />

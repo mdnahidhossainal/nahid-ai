@@ -151,6 +151,12 @@ export class AudioStreamer {
     return this.playbackQueue.length > 0 || this.activeNodes.length > 0;
   }
 
+  async resume() {
+    if (this.audioContext && this.audioContext.state === 'suspended') {
+      await this.audioContext.resume();
+    }
+  }
+
   async close() {
     this.stopMicrophone();
     this.stopPlayback();
