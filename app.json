@@ -22,7 +22,7 @@
         "foregroundImage": "./public/logo.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.nahid.ai"
+      "package": "com.nahidai.app"
     },
     "web": {
       "favicon": "./public/logo.png"
