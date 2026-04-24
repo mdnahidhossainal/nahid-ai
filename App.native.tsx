@@ -307,11 +307,15 @@ export default function NativeApp() {
     Speech.speak(currentText, {
       language: 'bn-BD',
       onDone: () => {
-        if (activeSpeakingIndexRef.current === msgIndex && !isSpeechPaused) {
+        // If we are currently paused, it means this 'onDone' was likely triggered by stop()
+        // we should only proceed and increment if we are NOT paused
+        if (!isSpeechPaused && activeSpeakingIndexRef.current === msgIndex) {
           if (currentSentenceIndexRef.current === currentIndex) {
             currentSentenceIndexRef.current++;
             setTimeout(() => {
-              playNextSentenceNative(msgIndex);
+              if (activeSpeakingIndexRef.current === msgIndex && !isSpeechPaused) {
+                playNextSentenceNative(msgIndex);
+              }
             }, 100);
           }
         }

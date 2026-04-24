@@ -593,7 +593,9 @@ export default function App() {
     utterance.lang = 'bn-BD';
 
     utterance.onend = () => {
-      if (currentSentenceIndexRef.current === currentIndex) {
+      // If we are currently paused, it means this 'onend' was likely triggered by cancel()
+      // so we should NOT increment the sentence index. We want to resume from the SAME sentence.
+      if (!isSpeechPaused && currentSentenceIndexRef.current === currentIndex) {
         currentSentenceIndexRef.current++;
         setTimeout(() => {
           if (!isSpeechPaused && activeSpeakingIndexRef.current === msgIndex) {
