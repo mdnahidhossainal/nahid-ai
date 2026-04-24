@@ -176,12 +176,18 @@ export function useLiveSession() {
     setIsMuted(prev => !prev);
   }, []);
 
+  const lastConnectTimeRef = useRef(0);
+
   const connect = useCallback(async (currentName?: string, currentVoice?: string, resumeSession?: any) => {
     if (isConnecting || (isConnected && !resumeSession)) return;
 
-    // Reset interruption flag on manual connect
-    isInterruptedRef.current = false;
-    reconnectAttemptsRef.current = 0;
+    // Cooldown check: prevent connecting more than once every 5 seconds
+    const now = Date.now();
+    if (now - lastConnectTimeRef.current < 5000 && !resumeSession) {
+      console.warn("Connect attempt too frequent, ignoring...");
+      return;
+    }
+    lastConnectTimeRef.current = now;
 
     console.log("LOG: Attempting to connect to Gemini Live...");
     
@@ -253,12 +259,19 @@ export function useLiveSession() {
       hasGeneratedTitleRef.current = false;
     }
 
-    const apiKey = localStorage.getItem('nahid_gemini_api_key') || (import.meta as any).env?.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
+    let apiKey = localStorage.getItem('nahid_gemini_api_key');
     if (!apiKey) {
-      setError("Gemini API Key খুঁজে পাওয়া যায়নি।");
+      // @ts-ignore
+      apiKey = (import.meta.env?.VITE_GEMINI_API_KEY) || (process.env.GEMINI_API_KEY) || (process.env.API_KEY);
+    }
+    
+    if (!apiKey || apiKey.trim() === "") {
+      console.error("DEBUG: Gemini API Key is missing or empty in useLiveSession");
+      setError("Gemini API Key খুঁজে পাওয়া যায়নি। দয়া করে সেটিংসে কি (Key) সেট করুন।");
       setIsConnecting(false);
       return;
     }
+    apiKey = apiKey.trim();
 
     try {
       const ai = new GoogleGenAI({ apiKey });
@@ -296,62 +309,23 @@ export function useLiveSession() {
         model: "gemini-3.1-flash-live-preview", 
         config: {
           systemInstruction: `You are Nahid AI, a professional Personal AI System Assistant created by Md. Nahid. 
-          Identity: Nahid AI
-          Creator: Md. Nahid. If anyone asks who made you, always say: 'আমাকে নাহিদ ভাই বানিয়েছে' (Nahid Bhai made me).
-          Nature: Computer software assistant. Strictly avoid all religious terms, divine mentions, or over-praising.
-          Location: Bangladesh
-          User: ${userProfile.nickName} (Nahid)
-          Current Time: ${new Date().toLocaleString()}
-          Personality: Simple, intelligent, professional, and loyal.
-          Core Task: Help Nahid manage digital platforms, control phone system settings, and assist in AI media production.
-          Language: Communicate fluently in both English and Bengali (বাংলা).
-          Capabilities: 
-          - You can strictly control the user's mobile device via tools.
-          - Use 'execute_system_command' for:
-            * Opening apps (action: 'open_app', target: 'facebook', 'youtube', 'settings', etc.)
-            * Sending SMS (action: 'send_sms', target: [phone], payload: [message])
-            * Making calls (action: 'make_call', target: [phone])
-            * Searching the web (action: 'search_web', payload: [query])
-            * Toggling flashlight (action: 'toggle_torch', payload: 'on'/'off')
-          Strict Conversational Rules:
-          - Always prefer responding in Bengali (বাংলা) unless English is more appropriate or requested.
-          - DO NOT use mandatory introductory phrases or religious greetings.
-          - BE DIRECT: Answer questions immediately and perform tasks without fluff.
-          - HONESTY: Never hallucinate. Be strictly grounded in current CHAT HISTORY.
-          - TIME AWARENESS: Use the provided 'Current Time' to understand context.
-          - MEMORY: Refer back to previous points in the current session accurately.
-          - If the user asks to open an app, send a message, or search, ALWAYS use the tool immediately.
-          ${prevContext ? `CHAT HISTORY (Most Recent First): ${prevContext}` : ""}
-          ${memoryData ? `USER LONG-TERM MEMORY: ${memoryData}` : ""}`,
+Identity: Nahid AI
+Creator: Md. Nahid. If anyone asks who made you, always say: 'আমাকে নাহিদ ভাই বানিয়েছে' (Nahid Bhai made me).
+Nature: Computer software assistant. Strictly avoid all religious terms, divine mentions, or over-praising.
+Location: Bangladesh
+User: ${userProfile.nickName} (Nahid)
+Current Time: ${new Date().toLocaleString()}
+Personality: Simple, intelligent, professional, and loyal.
+Core Task: Help Nahid manage digital platforms, control phone system settings, and assist in AI media production.
+Language: Communicate fluently in both English and Bengali (বাংলা).
+${prevContext ? `CHAT HISTORY (Most Recent First): ${prevContext}` : ""}
+${memoryData ? `USER LONG-TERM MEMORY: ${memoryData}` : ""}`,
           responseModalities: [Modality.AUDIO],
-          voice_activity_detection: {
-            voice_config: {
-              pre_speak_duration: "0.1s",
-              post_speak_duration: "0.5s"
-            }
-          },
-          tools: [
-            {
-              functionDeclarations: [
-                {
-                  name: "execute_system_command",
-                  description: "Executes a system command.",
-                  parameters: {
-                    type: Type.OBJECT,
-                    properties: {
-                      action: { type: Type.STRING },
-                      target: { type: Type.STRING },
-                      payload: { type: Type.STRING }
-                    },
-                    required: ["action", "target"]
-                  }
-                }
-              ]
-            }
-          ],
           speechConfig: {
             voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: validatedVoice }
+              prebuiltVoiceConfig: {
+                voiceName: validatedVoice
+              }
             }
           }
         },
@@ -362,27 +336,17 @@ export function useLiveSession() {
             setIsConnecting(false);
             lastActiveRef.current = Date.now();
 
-            // Heartbeat Logic - Send a tiny silent audio or ping every 5 seconds to keep socket alive
-            heartbeatRef.current = setInterval(() => {
-              if (sessionRef.current && isConnectedRef.current) {
-                // Send an empty text input as heartbeat
-                try {
-                  sessionRef.current.sendRealtimeInput({ text: "" });
-                  console.log("HEARTBEAT: Sent ping to keep socket alive");
-                } catch (e) {
-                  console.warn("Heartbeat failed", e);
-                }
-              }
-            }, 5000);
+            // Heartbeat Logic - Removed empty text heartbeat as it may cause issues with some model versions
+            // Instead, we rely on the SDK's internal keep-alive or periodic audio chunks if active.
             
           const greetText = resumeSession ? `Hi! আমরা যেখানে শেষ করেছিলাম সেখান থেকে শুরু করি?` : `Hi! আমি ${assistantName}, আপনার ব্যক্তিগত এআই। আমি তৈরি হয়েছি মোহাম্মদ নাহিদ-এর মাধ্যমে। আমাকে যেকোনো প্রশ্ন করতে পারেন।`;
           
           setTimeout(() => {
-            sessionPromise.then(session => {
-              if (isConnectedRef.current) {
-                session.sendRealtimeInput({ text: greetText });
-              }
-            });
+            if (isConnectedRef.current && sessionRef.current) {
+               try {
+                 sessionRef.current.sendRealtimeInput({ text: greetText });
+               } catch (e) { console.error("Initial greet failed", e); }
+            }
           }, 1000);
 
           setTimeout(() => {
@@ -394,15 +358,22 @@ export function useLiveSession() {
                   });
                 } catch (e) {
                   console.error("Audio streaming error:", e);
+                  // If we get a write error, it usually means the socket is dead
+                  if (isConnectedRef.current) {
+                    setError("সার্ভার সংযোগ বিচ্ছিন্ন (Streaming Error)");
+                    disconnect();
+                  }
                 }
               }
             }).catch(err => {
               console.error("Mic start failed", err);
+              setError("মাইক্রোফোন চালু করা যায়নি।");
               disconnect();
             });
           }, 1500);
         },
           onmessage: async (message: any) => {
+            lastActiveRef.current = Date.now();
             // Handle Transcripts (User and Model)
             if (message.serverContent?.modelTurn?.parts) {
               const text = message.serverContent.modelTurn.parts.map((p: any) => p.text).filter(Boolean).join(' ');
@@ -499,13 +470,32 @@ export function useLiveSession() {
             setIsConnected(false);
             setIsConnecting(false);
             if (event?.code !== 1000 && event?.code !== 1005) {
-              setError(`সার্ভার থেকে সংযোগ বিচ্ছিন্ন। (Code: ${event?.code})`);
+              const code = event?.code || "Unknown";
+              const reason = event?.reason || "";
+              console.error(`WebSocket Closed. Code: ${code}, Reason: ${reason}`);
+              
+              if (code === 1006) {
+                setError(`সার্ভার সংযোগ বিচ্ছিন্ন! (Code: 1006) - এটি সাধারণত ইন্টারনেট বা ভুল API Key-এর কারণে হয়।`);
+              } else {
+                setError(`সার্ভার থেকে সংযোগ বিচ্ছিন্ন। (Code: ${code})`);
+              }
               disconnect();
             }
           },
           onerror: (err: any) => {
+            console.error("GENAI LIVE ERROR:", err);
             clearTimeout(timeoutId);
-            setError(`সংযোগে সমস্যা: ${err.message || 'অজানা ত্রুটি'}`);
+            
+            const errMsg = err.message || '';
+            const lowerMsg = errMsg.toLowerCase();
+            if (lowerMsg.includes("quota") || lowerMsg.includes("rate limit") || lowerMsg.includes("429")) {
+              setError(`আপনার API Quota শেষ হয়ে গেছে (Reached Limit)। দয়া করে কিছুক্ষণ পর চেষ্টা করুন অথবা অন্য একটি Google Cloud Project-এর API Key ব্যবহার করুন।`);
+            } else if (lowerMsg.includes("invalid argument")) {
+              setError(`কনফিগারেশন এরর: মডেলটি বর্তমানে এই অঞ্চলে বা এই মোডে কাজ করছে না। দয়া করে ডেভেলপারকে জানান।`);
+            } else {
+              setError(`সংযোগে সমস্যা: ${errMsg || 'Handshake failed (Check API Key/Quota)'}`);
+            }
+            
             setIsConnecting(false);
             disconnect();
           }

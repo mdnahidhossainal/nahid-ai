@@ -81,7 +81,12 @@ export default function App() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [selectedSession, setSelectedSession] = useState<{ id: number; title: string; date: string; transcript: any[] } | null>(null);
   const [activeTab, setActiveTab] = useState<'profile' | 'memory' | 'assistant' | 'voice' | 'permissions' | 'hybrid' | 'api' | 'language' | 'agent'>('profile');
-  const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem('nahid_gemini_api_key') || '');
+  const [geminiApiKey, setGeminiApiKey] = useState(() => {
+    const local = localStorage.getItem('nahid_gemini_api_key');
+    if (local) return local;
+    // @ts-ignore
+    return process.env.GEMINI_API_KEY || '';
+  });
   const [hybridEnabled, setHybridEnabled] = useState(() => localStorage.getItem('nahid_hybrid') === 'true');
   const [isOnline, setIsOnline] = useState(window.navigator.onLine);
 
@@ -444,6 +449,11 @@ export default function App() {
       }
       
       const apiKey = geminiApiKey || (process.env.GEMINI_API_KEY as string);
+      if (!apiKey) {
+        setToastMessage("API Key পাওয়া যায়নি! সেটিংসে গিয়ে কি (Key) সেট করুন।");
+        setShowToast(true);
+        return false;
+      }
       const ai = new GoogleGenAI({ apiKey });
       
       const systemContext = "You are Nahid AI, a strictly professional Personal AI System Assistant created by Md. Nahid. If anyone asks who made you, YOU MUST ONLY say: 'আমাকে নাহিদ ভাই বানিয়েছে' (Nahid Bhai made me). You are a computer software assistant. You must NEVER use religious terms (like Srishtikorta, God, Creator, Divine, Lord), never over-praise the user, and never mention 'Neela'. Your identity is purely tool-based and loyal to Nahid Bhai. You communicate fluently in English and Bengali. Keep replies clean, intelligent, and professional.";

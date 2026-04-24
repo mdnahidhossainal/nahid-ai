@@ -19,6 +19,7 @@ export function useLiveSessionNative() {
   const audioStreamerRef = useRef<NativeAudioStreamer | null>(null);
   const sessionRef = useRef<any>(null);
   const transcriptRef = useRef<{ role: 'user' | 'model'; text: string }[]>([]);
+  const lastConnectTimeRef = useRef(0);
 
   useEffect(() => {
     transcriptRef.current = transcript;
@@ -65,6 +66,13 @@ export function useLiveSessionNative() {
   const connect = useCallback(async (assistantName: string, assistantVoice: string, forceOffline: boolean = false) => {
     if (isConnecting || isConnected) return;
 
+    // Cooldown check
+    const now = Date.now();
+    if (now - lastConnectTimeRef.current < 5000 && !forceOffline) {
+      console.warn("Native connect attempt too frequent, ignoring...");
+      return;
+    }
+    lastConnectTimeRef.current = now;
     setIsConnecting(true);
     setError(null);
 
@@ -90,12 +98,13 @@ export function useLiveSessionNative() {
        }
     }
 
-    const apiKey = await AsyncStorage.getItem('nahid_gemini_api_key');
-    if (!apiKey) {
+    let apiKey = await AsyncStorage.getItem('nahid_gemini_api_key');
+    if (!apiKey || apiKey.trim() === "") {
       setError("API Key খুঁজে পাওয়া যায়নি। সেটিংসে গিয়ে কি (Key) সেট করুন।");
       setIsConnecting(false);
       return;
     }
+    apiKey = apiKey.trim();
 
     try {
       await KeepAwake.activateKeepAwake();
@@ -112,44 +121,17 @@ export function useLiveSessionNative() {
         model: "gemini-3.1-flash-live-preview", 
         config: {
           systemInstruction: `You are ${assistantName}, a professional Native AI Assistant created by Mohammad Nahid.
-          Identity: ${assistantName}
-          User: ${userProfile.nickName}
-          Current Time: ${new Date().toLocaleString()}
-          
-          Strict Conversational Rules:
-          - Always respond in Bengali (বাংলা) naturally and concisely.
-          - DO NOT use mandatory introductory phrases unless specifically asked for a formal greeting.
-          - BE DIRECT: Answer questions immediately and perform tasks without fluff.
-          - HONESTY: Never hallucinate. Be strictly grounded in facts.
-          - TIME AWARENESS: Use the current time to be context-aware.
-          ${memoryData ? `USER LONG-TERM MEMORY: ${memoryData}` : ""}`,
-          tools: [
-            {
-              functionDeclarations: [
-                {
-                  name: "get_screen_content",
-                  description: "Get the current screen hierarchy and content of the user's phone to see what is happening.",
-                  parameters: { type: Type.OBJECT, properties: {} }
-                },
-                {
-                  name: "perform_action",
-                  description: "Perform a system action like Click, Back, Home, or Recents.",
-                  parameters: { 
-                    type: Type.OBJECT, 
-                    properties: { 
-                      type: { type: Type.STRING, description: "Action type: click, back, home, recents, notifications, quicksettings" },
-                      viewId: { type: Type.STRING, description: "ID of the view to click (only for click type)" }
-                    },
-                    required: ["type"]
-                  }
-                }
-              ]
-            }
-          ],
+Identity: ${assistantName}
+User: ${userProfile.nickName}
+Current Time: ${new Date().toLocaleString()}
+Personality: Professional, tool-focused, and loyal to Nahid Bhai (Md. Nahid).
+Language: Respond fluently in Bengali (বাংলা) and English.`,
           responseModalities: [Modality.AUDIO],
           speechConfig: {
             voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: assistantVoice }
+              prebuiltVoiceConfig: {
+                voiceName: assistantVoice
+              }
             }
           }
         },
@@ -216,10 +198,17 @@ export function useLiveSessionNative() {
           },
           onclose: () => disconnect(),
           onerror: (err: any) => {
-            if (err.message && err.message.includes('1006')) {
-              setError("সার্ভার থেকে সংযোগ বিচ্ছিন্ন! (Code: 1006)");
+            console.error("GENAI LIVE NATIVE ERROR:", err);
+            const errMsg = err.message || '';
+            const lowerMsg = errMsg.toLowerCase();
+            if (lowerMsg.includes("quota") || lowerMsg.includes("rate limit") || lowerMsg.includes("429")) {
+              setError(`আপনার API Quota শেষ হয়ে গেছে (Reached Limit)। দয়া করে কিছুক্ষণ পর চেষ্টা করুন বা অন্য একটি Google Cloud Project-এর API Key ব্যবহার করুন।`);
+            } else if (lowerMsg.includes("invalid argument")) {
+              setError(`কনফিগারেশন এরর: মডেলটি বর্তমানে এই অঞ্চলে বা এই মোডে কাজ করছে না। দয়া করে ডেভেলপারকে জানান।`);
+            } else if (errMsg.includes('1006')) {
+              setError("সার্ভার থেকে সংযোগ বিচ্ছিন্ন! (Code: 1006) - এটি সাধারণত ইন্টারনেট বা API Key-এর সমস্যার কারণে হয়।");
             } else {
-              setError(err.message || "কানেকশন এরর হয়েছে");
+              setError(errMsg || "কানেকশন এরর হয়েছে");
             }
             disconnect();
           }
