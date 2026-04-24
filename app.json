@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "Nahid AI",
+    "slug": "nahid-ai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./public/logo.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./public/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./public/logo.png",
+        "backgroundColor": "#000000"
+      },
+      "package": "com.nahid.ai"
+    },
+    "web": {
+      "favicon": "./public/logo.png"
+    }
+  }
+}

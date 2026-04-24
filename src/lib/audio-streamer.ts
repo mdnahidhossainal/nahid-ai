@@ -40,12 +40,24 @@ export class AudioStreamer {
           channelCount: 1
         } 
       });
-      this.source = this.audioContext.createMediaStreamSource(this.microphoneStream);
 
-      const bufferSize = 1024; // Lower buffer for faster transmission (~64ms @ 16kHz)
+      if (!this.audioContext || !this.microphoneStream) {
+        console.error("AudioStreamer: AudioContext or microphoneStream is null");
+        return;
+      }
+
+      try {
+        this.source = this.audioContext.createMediaStreamSource(this.microphoneStream);
+      } catch (err) {
+        console.error("AudioStreamer: Failed to create media stream source", err);
+        return;
+      }
+
+      const bufferSize = 1024;
       const scriptNode = this.audioContext.createScriptProcessor(bufferSize, 1, 1);
       
       scriptNode.onaudioprocess = (event) => {
+        if (!this.source) return; // Stop processing if disconnected
         const inputData = event.inputBuffer.getChannelData(0);
         const pcmData = new Int16Array(inputData.length);
         for (let i = 0; i < inputData.length; i++) {

@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Settings as SettingsIcon, Info, Loader2, Zap, AudioLines, 
   ShieldCheck, ShieldAlert, Shield, X, 
   Mic, Database, MessageSquare, LayoutGrid,
-  User as UserIcon, Trash2, Brain, Save, PlusCircle, Menu, History, Bot, Volume2, LogOut, LogIn
+  User as UserIcon, Trash2, Brain, Save, PlusCircle, Menu, History, Bot, Volume2, LogOut, LogIn, Play, RotateCcw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { GoogleGenAI } from "@google/genai";
 import { useLiveSession } from '@/hooks/useLiveSession';
 import { Capacitor } from '@capacitor/core';
 import { NahidLogo } from '@/components/NahidLogo';
@@ -44,21 +45,40 @@ export default function App() {
     isSpeaking, 
     isMuted,
     error, 
-    transcript,
+    transcript: voiceTranscript,
     connect, 
     disconnect,
     toggleMute,
-    setTranscript,
+    setTranscript: setVoiceTranscript,
     currentSessionId,
-    latestAction
+    latestAction,
+    sendMessage
   } = useLiveSession();
 
   const { t, i18n: i18nInstance } = useTranslation();
   const { setupLocalModel, isModelLoading, loadProgress, isReady: isLocalReady } = useLocalAI();
 
   // State Hooks
+  const [chatTranscript, setChatTranscript] = useState<{ role: 'user' | 'model'; text: string }[]>([]);
+  const [currentChatSessionId, setCurrentChatSessionId] = useState<string | null>(null);
+  const currentChatSessionIdRef = useRef<string | null>(null);
+  const [streamingResponse, setStreamingResponse] = useState<string>('');
+  const [isTyping, setIsTyping] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [isChatMode, setIsChatMode] = useState(false);
+  const [chatInput, setChatInput] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [speakingMessageIndex, setSpeakingMessageIndex] = useState<number | null>(null);
+  const [isSpeechPaused, setIsSpeechPaused] = useState(false);
+  const lastCharIndexRef = useRef(0);
+  const currentSentenceIndexRef = useRef(0);
+  const sentencesRef = useRef<string[]>([]);
+  const activeSpeakingIndexRef = useRef<number | null>(null);
+  const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [showFullEditor, setShowFullEditor] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
   const [selectedSession, setSelectedSession] = useState<{ id: number; title: string; date: string; transcript: any[] } | null>(null);
   const [activeTab, setActiveTab] = useState<'profile' | 'memory' | 'assistant' | 'voice' | 'permissions' | 'hybrid' | 'api' | 'language' | 'agent'>('profile');
   const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem('nahid_gemini_api_key') || '');
@@ -90,8 +110,32 @@ export default function App() {
     }
   });
 
+  useEffect(() => {
+    // Suppress benign Vite/WebSocket errors as per environment context
+    const handleError = (e: ErrorEvent | PromiseRejectionEvent) => {
+      const msg = (e as any).message || (e as any).reason?.message || "";
+      if (msg.includes('WebSocket') || msg.includes('vite')) {
+        e.preventDefault(); 
+      }
+    };
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleError);
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleError);
+    };
+  }, []);
+
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+
+  // Global Toast Auto-hide Effect (Requested: 1-2 seconds)
+  useEffect(() => {
+    if (showToast) {
+      const timer = setTimeout(() => setShowToast(false), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [showToast]);
   const [isSaving, setIsSaving] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -325,6 +369,252 @@ export default function App() {
   }, []);
 
   // Utility Functions
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatTranscript, streamingResponse, isChatMode]);
+
+  const handleSendMessage = async () => {
+    if (!chatInput.trim() || isChatLoading) return;
+    const text = chatInput.trim();
+    setChatInput(''); // Clear input immediately
+    triggerHaptic();
+    await handleChatResponse(text);
+  };
+
+  const saveChatSession = useCallback(async (transcriptToSave: any[], uid: string, sessionId: string | undefined) => {
+    if (!uid || transcriptToSave.length === 0) return;
+    
+    try {
+      const sessionData = {
+        title: transcriptToSave[0].text.substring(0, 30) || "Chat Session",
+        transcript: transcriptToSave,
+        date: new Date().toLocaleString(),
+        type: 'chat'
+      };
+      
+      const id = await saveSessionToCloud(uid, sessionData, sessionId);
+      if (!currentChatSessionIdRef.current) {
+        currentChatSessionIdRef.current = id;
+        setCurrentChatSessionId(id);
+      }
+    } catch (e: any) {
+      console.error("Failed to save chat session", {
+        message: e.message,
+        uid,
+        sessionId,
+        stack: e.stack
+      });
+    }
+  }, []);
+
+  const simulateTyping = async (fullText: string) => {
+    setIsTyping(true);
+    setStreamingResponse('');
+    const words = fullText.split(' ');
+    let currentText = '';
+    
+    for (let i = 0; i < words.length; i++) {
+       currentText += words[i] + (i < words.length - 1 ? ' ' : '');
+       setStreamingResponse(currentText);
+       // Ultra fast typing
+       await new Promise(resolve => setTimeout(resolve, 8 + Math.random() * 8));
+    }
+    
+    const updatedTranscript = [...chatTranscript, { role: 'model' as const, text: fullText }];
+    setChatTranscript(updatedTranscript);
+    setStreamingResponse('');
+    setIsTyping(false);
+    
+    if (currentUser?.uid) {
+      saveChatSession(updatedTranscript, currentUser.uid, currentChatSessionIdRef.current || undefined);
+    }
+  };
+
+  const handleChatResponse = async (text: string) => {
+    try {
+      setIsChatLoading(true);
+      const userMsg = { role: 'user' as const, text };
+      const updatedTranscript = [...chatTranscript, userMsg];
+      setChatTranscript(updatedTranscript);
+      
+      if (currentUser?.uid) {
+        saveChatSession(updatedTranscript, currentUser.uid, currentChatSessionIdRef.current || undefined);
+      }
+      
+      const apiKey = geminiApiKey || (process.env.GEMINI_API_KEY as string);
+      const ai = new GoogleGenAI({ apiKey });
+      
+      const systemContext = "You are Nahid AI, a specialized Personal AI System Assistant created and trained by Mohammed Nahidur Rahman (Md. Nahid). Your home base is Bangladesh. You are helpful, intelligent, and loyal to Nahid. Your main job is to help Nahid manage his digital platforms, control system settings, and assist in AI media production. You communicate fluently in both English and Bengali. Respond in an intelligent, loyal, and friendly yet professional tone. AVOID excessive markdown like bold markers (**). Keep replies clean and natural.";
+      const prompt = `${systemContext}\n\n` + chatTranscript.map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.text}`).join('\n') + `\nUser: ${text}\nAssistant:`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt
+      });
+      
+      const responseText = response.text?.trim() || "";
+      simulateTyping(responseText);
+      return true;
+    } catch (e) {
+      console.error("Chat Error", e);
+      setToastMessage("চ্যাট রেসপন্স পেতে সমস্যা হয়েছে। API Key চেক করুন।");
+      setShowToast(true);
+      return false;
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
+
+  const startNewChat = () => {
+    triggerHaptic();
+    setChatTranscript([]);
+    currentChatSessionIdRef.current = null;
+    setCurrentChatSessionId(null);
+    setStreamingResponse('');
+    setChatInput('');
+    setToastMessage("নতুন চ্যাট শুরু করা হয়েছে");
+    setShowToast(true);
+  };
+
+  const handleCopy = (text: string, index: number) => {
+    navigator.clipboard.writeText(text);
+    setCopiedIndex(index);
+    setToastMessage("কপি করা হয়েছে");
+    setShowToast(true);
+    // Disappear after 1.2s with feedback
+    setTimeout(() => {
+      setCopiedIndex(null);
+      setShowToast(false);
+    }, 1200);
+  };
+
+  useEffect(() => {
+    // Auto-stop speech when leaving chat screen or closing history/session detail
+    if (!isChatMode && (!showHistory || !selectedSession)) {
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+        setSpeakingMessageIndex(null);
+        setIsSpeechPaused(false);
+        lastCharIndexRef.current = 0;
+      }
+    }
+  }, [isChatMode, showHistory, selectedSession]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (speakingMessageIndex !== null && window.speechSynthesis && !window.speechSynthesis.speaking && !isSpeechPaused) {
+        // If our state says we are speaking but the browser says we aren't, and we aren't paused
+        // then something went wrong or it ended without triggering onend
+        setSpeakingMessageIndex(null);
+        setIsSpeechPaused(false);
+        lastCharIndexRef.current = 0;
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [speakingMessageIndex, isSpeechPaused]);
+
+  const speakText = (text: string, index: number, restart: boolean = false) => {
+    if (!window.speechSynthesis) return;
+
+    if (restart) {
+      window.speechSynthesis.cancel();
+      currentSentenceIndexRef.current = 0;
+      setIsSpeechPaused(false);
+      activeSpeakingIndexRef.current = index;
+      setSpeakingMessageIndex(index);
+      
+      // Split text into chunks for discrete tracking
+      // We split by punctuation to maintain natural pauses
+      sentencesRef.current = text.match(/[^.!?|।]+[.!?|।]*|[^.!?|।]+/g) || [text];
+      
+      setTimeout(() => {
+        playNextSentence(index);
+      }, 50);
+      return;
+    } 
+    
+    if (speakingMessageIndex === index) {
+      if (isSpeechPaused) {
+        // RESUME LOGIC - Starts from EXACT saved index
+        setIsSpeechPaused(false);
+        playNextSentence(index);
+        return;
+      } else {
+        // PAUSE LOGIC - Stop engine immediately but keep index
+        window.speechSynthesis.cancel();
+        setIsSpeechPaused(true);
+        return;
+      }
+    }
+
+    // New read initialization
+    window.speechSynthesis.cancel();
+    currentSentenceIndexRef.current = 0;
+    sentencesRef.current = text.match(/[^.!?|।]+[.!?|।]*|[^.!?|।]+/g) || [text];
+    
+    activeSpeakingIndexRef.current = index;
+    setSpeakingMessageIndex(index);
+    setIsSpeechPaused(false);
+    playNextSentence(index);
+  };
+
+  const playNextSentence = (msgIndex: number) => {
+    if (!window.speechSynthesis) return;
+    
+    const sentences = sentencesRef.current;
+    const currentIndex = currentSentenceIndexRef.current;
+
+    if (activeSpeakingIndexRef.current !== msgIndex) return;
+
+    if (currentIndex >= sentences.length) {
+      setSpeakingMessageIndex(null);
+      setIsSpeechPaused(false);
+      currentSentenceIndexRef.current = 0;
+      return;
+    }
+
+    const currentText = sentences[currentIndex].trim();
+    if (!currentText) {
+      currentSentenceIndexRef.current++;
+      playNextSentence(msgIndex);
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(currentText);
+    const voices = window.speechSynthesis.getVoices();
+    const googleVoice = voices.find(v => v.name.includes('Google') && v.lang.includes('bn')) || 
+                        voices.find(v => v.lang.includes('bn')) ||
+                        voices[0];
+    
+    if (googleVoice) utterance.voice = googleVoice;
+    utterance.rate = 1.0;
+    utterance.lang = 'bn-BD';
+
+    utterance.onend = () => {
+      if (currentSentenceIndexRef.current === currentIndex) {
+        currentSentenceIndexRef.current++;
+        setTimeout(() => {
+          if (!isSpeechPaused && activeSpeakingIndexRef.current === msgIndex) {
+            playNextSentence(msgIndex);
+          }
+        }, 80);
+      }
+    };
+
+    utterance.onerror = (e) => {
+      if (e.error !== 'interrupted') {
+        console.error("Speech Chunk Error", e);
+        setSpeakingMessageIndex(null);
+        setIsSpeechPaused(false);
+      }
+    };
+
+    currentUtteranceRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+  };
+
   const checkAllPermissions = async () => {
     try {
       let micState: any = 'unknown';
@@ -356,19 +646,19 @@ export default function App() {
 
       try {
         const { Geolocation } = await import('@capacitor/geolocation');
-        const locPerm = await Geolocation.checkPermissions();
+        const locPerm = await Geolocation.checkPermissions().catch(() => ({ location: 'prompt' }));
         locState = locPerm.location === 'granted' ? 'enabled' : (locPerm.location === 'denied' ? 'disabled' : 'prompt');
       } catch (e) {}
 
       try {
         const { Filesystem } = await import('@capacitor/filesystem');
-        const storePerm = await Filesystem.checkPermissions();
+        const storePerm = await Filesystem.checkPermissions().catch(() => ({ publicStorage: 'prompt' }));
         storeState = storePerm.publicStorage === 'granted' ? 'enabled' : (storePerm.publicStorage === 'denied' ? 'disabled' : 'prompt');
       } catch (e) {}
 
       try {
         const { LocalNotifications } = await import('@capacitor/local-notifications');
-        const notePerm = await LocalNotifications.checkPermissions();
+        const notePerm = await LocalNotifications.checkPermissions().catch(() => ({ display: 'prompt' }));
         notificationsState = notePerm.display === 'granted' ? 'enabled' : (notePerm.display === 'denied' ? 'disabled' : 'prompt');
       } catch (e) {
         // Fallback for web if no capacitor plugin
@@ -616,11 +906,11 @@ export default function App() {
     }
   };
 
-  const startNewChat = async () => {
+  const restartVoiceEngine = async () => {
     if (isConnected) {
       await disconnect();
     }
-    setTranscript([]);
+    setVoiceTranscript([]);
     setSelectedSession(null);
     setTimeout(() => connect(assistantName, assistantVoice), 300);
   };
@@ -808,7 +1098,16 @@ export default function App() {
                    >
                      ← {t('history.backToList')}
                    </button>
-                   <h3 className="font-bold text-lg mb-4 text-white/90 leading-tight">{selectedSession.title}</h3>
+                   <div className="flex items-center justify-between mb-4">
+                     <h3 className="font-bold text-lg text-white/90 leading-tight">{selectedSession.title}</h3>
+                     <span className={`text-[8px] px-2 py-1 rounded-lg font-black uppercase tracking-widest ${
+                       (selectedSession as any).type === 'chat' 
+                         ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' 
+                         : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                     }`}>
+                       {(selectedSession as any).type === 'chat' ? 'Text Chat' : 'Voice/Live Chat'}
+                     </span>
+                   </div>
                    <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
                      {selectedSession.transcript.map((msg, i) => (
                        <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
@@ -824,24 +1123,48 @@ export default function App() {
                     <button 
                       onClick={() => {
                         setShowHistory(false);
-                        connect(assistantName, assistantVoice, selectedSession);
+                        const isTextChat = (selectedSession as any).type === 'chat';
+                        
+                        if (isTextChat) {
+                          // Resume as Text Chat
+                          setChatTranscript(selectedSession.transcript);
+                          currentChatSessionIdRef.current = selectedSession.id.toString();
+                          setCurrentChatSessionId(selectedSession.id.toString());
+                          setIsChatMode(true);
+                        } else {
+                          // Resume as Voice Chat
+                          connect(assistantName, assistantVoice, selectedSession);
+                          // Ensure we are NOT in chat mode if it's a voice session
+                          setIsChatMode(false);
+                        }
                       }}
                       className="mt-4 w-full py-4 bg-blue-600/20 text-blue-400 border border-blue-500/20 rounded-2xl font-black text-[11px] uppercase tracking-widest hover:bg-blue-600/30 transition-all active:scale-95 flex items-center justify-center gap-2"
                     >
                       <Zap className="w-4 h-4" />
-                      {t('history.resumeChat', { defaultValue: 'চ্যাট চালিয়ে যান' })}
+                      {t('history.resumeChat', { defaultValue: 'আবার শুরু করুন (Resume Chat)' })}
                     </button>
                 </div>
               ) : (
                 <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar">
                   {history.length > 0 ? (
-                    history.map((item) => (
+                    history.map((item, idx) => (
                       <button 
-                        key={item.id} 
+                        key={`${item.id}-${idx}`} 
                         onClick={() => setSelectedSession(item)}
-                        className="w-full text-left p-4 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/5 transition-all flex flex-col gap-1 group"
+                        className="w-full text-left p-4 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/5 transition-all flex flex-col gap-1 group relative overflow-hidden"
                       >
-                        <span className="font-bold text-white/80 group-hover:text-blue-400 transition-colors line-clamp-1">{item.title}</span>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-white/80 group-hover:text-blue-400 transition-colors line-clamp-1">{item.title}</span>
+                          {(item as any).type && (
+                            <span className={`text-[7px] px-1.5 py-0.5 rounded-md font-black uppercase tracking-widest border ${
+                              (item as any).type === 'chat' 
+                                ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' 
+                                : 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                            }`}>
+                              {(item as any).type === 'chat' ? 'Text' : 'Voice'}
+                            </span>
+                          )}
+                        </div>
                         <span className="text-[9px] text-white/30 uppercase tracking-widest">{item.date}</span>
                       </button>
                     ))
@@ -1551,60 +1874,350 @@ export default function App() {
         </motion.div>
       )}
 
-      <footer className="p-2 sm:p-4 flex flex-col items-center gap-3 bg-gradient-to-t from-black/80 to-transparent">
-          <div className="w-full max-w-[240px] flex items-center gap-2">
-            {/* New Location for Mute Toggle */}
-            <AnimatePresence>
-              {isConnected && (
-                <motion.button
-                  initial={{ opacity: 0, x: -20, scale: 0.8 }}
-                  animate={{ opacity: 1, x: 0, scale: 1 }}
-                  exit={{ opacity: 0, x: -20, scale: 0.8 }}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={toggleMute}
-                  className={`flex-shrink-0 w-7 h-7 sm:w-9 sm:h-9 rounded-md border flex items-center justify-center transition-all duration-500 relative overflow-hidden ${
-                    isMuted 
-                    ? 'bg-orange-500/10 border-orange-500 text-orange-400' 
-                    : 'bg-white/5 border-white/20 text-white/30 hover:border-white/40'
-                  }`}
-                >
-                  {isMuted ? <ShieldAlert className="w-3 h-3 sm:w-4 sm:h-4" /> : <ShieldCheck className="w-3 h-3 sm:w-4 sm:h-4 opacity-30" />}
-                  {isMuted && (
-                    <motion.div 
-                      layoutId="mute-glow"
-                      className="absolute inset-0 bg-orange-500/10 animate-pulse pointer-events-none"
-                    />
-                  )}
-                </motion.button>
-              )}
-            </AnimatePresence>
-
+      <footer className="p-4 flex flex-col items-center gap-6 bg-gradient-to-t from-black/80 to-transparent">
+          <div className="w-full max-w-[320px] flex items-center justify-between gap-6">
+            {/* Chat Mode Button - Independent Entry */}
             <motion.button
-              whileHover={{ scale: isConnecting ? 1 : 1.02 }}
-              whileTap={{ scale: isConnecting ? 1 : 0.98 }}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
               onClick={() => {
                 triggerHaptic();
-                isConnected ? disconnect() : connect();
+                setIsChatMode(true);
               }}
-              disabled={isConnecting}
-              className={`relative flex-1 py-2 sm:py-2.5 rounded-md font-black text-[7.5px] sm:text-[8.5px] uppercase tracking-[0.1em] transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md ${
-                isConnected 
-                  ? 'bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20' 
-                  : 'bg-white text-black hover:bg-zinc-100'
-              } disabled:opacity-50`}
+              className="w-12 h-12 flex-shrink-0 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-2xl flex items-center justify-center hover:bg-indigo-500/20 transition-all shadow-lg active:scale-95"
+              title="Open Chat"
             >
-              {isConnecting ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : isConnected ? (
-                <>{t('home.stopAssistant')}</>
-              ) : (
-                <>{assistantName} {t('home.startAssistant')}</>
-              )}
+              <MessageSquare className="w-5 h-5" />
             </motion.button>
+            
+            {/* Main Voice Entry */}
+            <div className="flex-1 flex items-center gap-2">
+              <AnimatePresence>
+                {isConnected && (
+                  <motion.button
+                    initial={{ opacity: 0, x: -20, scale: 0.8 }}
+                    animate={{ opacity: 1, x: 0, scale: 1 }}
+                    exit={{ opacity: 0, x: -20, scale: 0.8 }}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={toggleMute}
+                    className={`flex-shrink-0 w-8 h-12 rounded-xl border flex items-center justify-center transition-all duration-500 ${
+                      isMuted 
+                      ? 'bg-orange-500/10 border-orange-500 text-orange-400' 
+                      : 'bg-white/5 border-white/20 text-white/30 hover:border-white/40'
+                    }`}
+                  >
+                    {isMuted ? <ShieldAlert className="w-4 h-4" /> : <ShieldCheck className="w-4 h-4 opacity-30" />}
+                  </motion.button>
+                )}
+              </AnimatePresence>
+
+              <motion.button
+                whileHover={{ scale: isConnecting ? 1 : 1.02 }}
+                whileTap={{ scale: isConnecting ? 1 : 0.98 }}
+                onClick={() => {
+                  triggerHaptic();
+                  isConnected ? disconnect() : connect();
+                }}
+                disabled={isConnecting}
+                className={`relative flex-1 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 cursor-pointer shadow-xl ${
+                  isConnected 
+                    ? 'bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20' 
+                    : 'bg-white text-black hover:bg-zinc-100 shadow-white/10'
+                } disabled:opacity-50`}
+              >
+                {isConnecting ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : isConnected ? (
+                  <>{t('home.stopAssistant')}</>
+                ) : (
+                  <>{assistantName} {t('home.startAssistant')}</>
+                )}
+              </motion.button>
+            </div>
           </div>
         </footer>
       </div>
+      <AnimatePresence>
+        {isChatMode && (
+          <motion.div
+            initial={{ opacity: 0, x: '100%' }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: '100%' }}
+            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            className="fixed inset-0 z-[150] bg-black flex flex-col"
+          >
+            {/* Chat Header */}
+            <header className="p-4 sm:p-6 border-b border-white/10 flex items-center justify-between bg-black/40 backdrop-blur-3xl sticky top-0 z-20">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30">
+                  <Bot className="w-6 h-6 text-indigo-400" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-black uppercase tracking-widest text-white leading-none mb-1">{assistantName} Chat</h2>
+                  <div className="flex items-center gap-1.5">
+                    <div className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                    <span className="text-[8px] font-mono uppercase tracking-tighter text-white/40">
+                      {isConnected ? 'System Online' : 'System Offline'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={startNewChat}
+                  className="p-3 bg-white/5 hover:bg-white/10 rounded-2xl transition-all border border-white/5 flex items-center gap-2"
+                  title="New Chat"
+                >
+                  <PlusCircle className="w-4 h-4 text-white/40" />
+                  <span className="text-[8px] font-black uppercase tracking-widest text-white/40">New Chat</span>
+                </button>
+                <button 
+                  onClick={() => setIsChatMode(false)}
+                  className="p-3 bg-white/5 hover:bg-white/10 rounded-2xl transition-all border border-white/5"
+                >
+                  <X className="w-5 h-5 text-white/40" />
+                </button>
+              </div>
+            </header>
+
+            {/* Chat Messages */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 no-scrollbar">
+              {chatTranscript.length === 0 && !streamingResponse && (
+                <div className="h-full flex flex-col items-center justify-center opacity-20 space-y-4">
+                  <div className="w-20 h-20 bg-indigo-500/10 rounded-full flex items-center justify-center border border-indigo-500/10">
+                    <MessageSquare className="w-8 h-8 text-indigo-400" />
+                  </div>
+                  <p className="text-[10px] uppercase font-black tracking-[0.3em] font-mono">Initiate Communication</p>
+                </div>
+              )}
+
+              {chatTranscript.map((msg, index) => (
+                <motion.div
+                  key={index}
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} mb-6`}
+                >
+                  <div className={`max-w-[85%] group relative ${msg.role === 'user' ? '' : 'flex items-start gap-2'}`}>
+                    {msg.role === 'model' && (
+                      <div className="w-6 h-6 rounded-lg bg-indigo-500/10 flex-shrink-0 mt-1 border border-indigo-500/20">
+                        <Bot className="w-3.5 h-3.5 text-indigo-400 m-auto" />
+                      </div>
+                    )}
+                    <div className={`p-4 rounded-[20px] text-[11px] font-medium leading-relaxed shadow-sm ${
+                      msg.role === 'user' 
+                        ? 'bg-indigo-600 text-white rounded-tr-none' 
+                        : 'bg-zinc-900 border border-white/5 text-zinc-100 rounded-tl-none'
+                    }`}>
+                      {msg.text}
+                      {msg.role === 'model' && (
+                        <div className="absolute -bottom-16 left-2 opacity-100 flex gap-2 pt-2 z-10">
+                           <button onClick={(e) => {
+                             e.stopPropagation();
+                             handleCopy(msg.text, index);
+                           }} className={`text-[7px] uppercase font-bold tracking-wider px-3 py-1.5 rounded-lg border transition-all active:scale-95 relative overflow-hidden ${
+                             copiedIndex === index 
+                             ? 'bg-green-500 text-white border-green-500 scale-105' 
+                             : 'text-white/40 hover:text-indigo-400 bg-white/5 border-white/5 shadow-sm'
+                           }`}>
+                             <AnimatePresence mode="wait">
+                               {copiedIndex === index ? (
+                                 <motion.span 
+                                   key="copied"
+                                   initial={{ opacity: 0, scale: 0.8 }}
+                                   animate={{ opacity: 1, scale: 1 }}
+                                   exit={{ opacity: 0, scale: 0.8 }}
+                                   className="inline-block"
+                                 >
+                                   কপি করা হয়েছে
+                                 </motion.span>
+                               ) : (
+                                 <motion.span 
+                                   key="copy"
+                                   initial={{ opacity: 0 }}
+                                   animate={{ opacity: 1 }}
+                                   className="inline-block"
+                                 >
+                                   Copy
+                                 </motion.span>
+                               )}
+                             </AnimatePresence>
+                           </button>
+                           
+                           <div className="flex bg-white/5 rounded-lg border border-white/10 overflow-hidden shadow-lg backdrop-blur-md">
+                             <button 
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 speakText(msg.text, index);
+                               }} 
+                               className={`text-[7px] uppercase font-bold px-3 py-1.5 transition-all flex items-center gap-2 active:scale-95 min-w-[70px] justify-center ${
+                                 speakingMessageIndex === index 
+                                 ? (isSpeechPaused ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30' : 'bg-indigo-600 text-white shadow-inner') 
+                                 : 'text-white/40 hover:text-indigo-400 hover:bg-white/10'
+                               }`}
+                             >
+                               {speakingMessageIndex === index && !isSpeechPaused ? (
+                                 <AudioLines className="w-3.5 h-3.5 animate-pulse" />
+                               ) : (
+                                 isSpeechPaused && speakingMessageIndex === index ? (
+                                   <Play className="w-3.5 h-3.5" />
+                                 ) : (
+                                   <Volume2 className="w-3.5 h-3.5" />
+                                 )
+                               )}
+                               <span className="tracking-widest capitalize">
+                                 {speakingMessageIndex === index ? (isSpeechPaused ? 'Resume' : 'Pause') : 'Listen'}
+                               </span>
+                             </button>
+                             
+                             <button 
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 speakText(msg.text, index, true);
+                               }} 
+                               className={`text-[7px] uppercase font-black px-3 py-1.5 border-l border-white/10 transition-all flex items-center gap-1 cursor-pointer active:rotate-180 duration-500 ${
+                                 speakingMessageIndex === index ? 'text-white/60 hover:text-white hover:bg-white/5' : 'text-white/10 hover:text-white/40 hover:bg-white/5'
+                               }`} 
+                               title="Restart Reading"
+                             >
+                               <RotateCcw className="w-3 h-3" />
+                             </button>
+                           </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+
+              {streamingResponse && (
+                <div className="flex justify-start mb-6">
+                  <div className="max-w-[85%] flex items-start gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-indigo-500/10 flex-shrink-0 mt-1 border border-indigo-500/20">
+                      <Bot className="w-3.5 h-3.5 text-indigo-400 m-auto" />
+                    </div>
+                    <div className="p-4 rounded-[20px] text-[11px] font-medium leading-relaxed shadow-sm bg-zinc-900 border border-white/5 text-zinc-100 rounded-tl-none">
+                      {streamingResponse}
+                      <span className="inline-block w-1 h-3 bg-indigo-500 ml-1 animate-pulse" />
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {isChatLoading && !streamingResponse && (
+                <motion.div 
+                  initial={{ opacity: 0 }} 
+                  animate={{ opacity: 1 }}
+                  className="flex items-start gap-2 mb-4"
+                >
+                   <div className="w-6 h-6 rounded-lg bg-zinc-900 flex-shrink-0 mt-1 border border-white/5">
+                      <Bot className="w-3.5 h-3.5 text-indigo-400 m-auto animate-pulse" />
+                   </div>
+                   <div className="p-4 bg-zinc-900/40 border border-white/10 rounded-[20px] rounded-tl-none">
+                      <div className="flex gap-1.5">
+                        <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1, delay: 0 }} className="w-1.5 h-1.5 bg-indigo-400 rounded-full" />
+                        <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="w-1.5 h-1.5 bg-indigo-400 rounded-full" />
+                        <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-1.5 h-1.5 bg-indigo-400 rounded-full" />
+                      </div>
+                   </div>
+                </motion.div>
+              )}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Input Area */}
+            <div className="p-4 border-t border-white/5 bg-black/40 backdrop-blur-md relative">
+              {chatInput.length > 100 && !showFullEditor && (
+                <button 
+                  onClick={() => setShowFullEditor(true)}
+                  className="absolute -top-10 left-1/2 -translate-x-1/2 bg-zinc-900 border border-white/10 px-3 py-1.5 rounded-full text-[8px] font-bold text-indigo-400 uppercase tracking-widest shadow-xl flex items-center gap-1.5"
+                >
+                  <PlusCircle className="w-3 h-3" /> পুরো লেখা দেখুন (Expand)
+                </button>
+              )}
+
+              <div className="flex items-end gap-2 bg-zinc-900/60 border border-white/10 rounded-[24px] p-2 transition-all focus-within:border-indigo-500/50 focus-within:bg-zinc-800 relative group">
+                <textarea
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      // Allow Enter for new line, do NOT send
+                    }
+                  }}
+                  placeholder="পড়াশোনা বা যেকোনো প্রশ্ন করো..."
+                  disabled={isChatLoading}
+                  rows={1}
+                  className="flex-1 bg-transparent px-3 py-2.5 outline-none text-[11px] text-white placeholder:text-white/20 font-medium disabled:opacity-50 resize-none max-h-[150px] overflow-y-auto pr-10"
+                  style={{ height: 'auto', minHeight: '44px' }}
+                />
+                
+                <button 
+                  onClick={() => setShowFullEditor(true)}
+                  className="absolute top-3.5 right-14 p-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-white/20 hover:text-indigo-400 transition-all opacity-0 group-hover:opacity-100"
+                  title="Expand Editor"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                </button>
+
+                <button 
+                  onClick={handleSendMessage}
+                  disabled={!chatInput.trim() || isChatLoading}
+                  className="w-11 h-11 flex-shrink-0 rounded-full bg-indigo-600 text-white flex items-center justify-center disabled:opacity-30 disabled:bg-white/10 shadow-lg shadow-indigo-600/20 active:scale-95 transition-all outline-none"
+                >
+                  {isChatLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Zap className="w-5 h-5 fill-white" />}
+                </button>
+              </div>
+              <p className="mt-4 text-center text-[7px] text-white/10 uppercase font-black tracking-widest italic">Nahid AI Native Engine v1.0 • Hybrid Intelligence</p>
+            </div>
+
+            {/* Full Editor Modal */}
+            <AnimatePresence>
+              {showFullEditor && (
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute inset-0 bg-black/95 z-[60] flex flex-col p-6"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-white/40">Full Editor</h3>
+                    <button onClick={() => setShowFullEditor(false)} className="p-2 bg-white/5 rounded-lg">
+                      <X className="w-4 h-4 text-white" />
+                    </button>
+                  </div>
+                  <textarea
+                    autoFocus
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    className="flex-1 bg-transparent text-[13px] text-zinc-100 outline-none leading-relaxed resize-none p-4 bg-zinc-900/50 rounded-2xl border border-white/5"
+                    placeholder="পড়াশোনা বা যেকোনো প্রশ্ন করো..."
+                  />
+                  <div className="mt-4 flex gap-3">
+                    <button 
+                      onClick={() => setShowFullEditor(false)}
+                      className="flex-1 py-4 bg-white/5 text-[10px] uppercase font-black tracking-widest rounded-xl"
+                    >
+                      বন্ধ করুন (Close)
+                    </button>
+                    <button 
+                      onClick={() => {
+                        handleSendMessage();
+                        setShowFullEditor(false);
+                      }}
+                      className="flex-1 py-4 bg-indigo-600 text-[10px] uppercase font-black tracking-widest rounded-xl text-white"
+                    >
+                      সেন্ড করুন (Send)
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <AnimatePresence>
         {showToast && (
           <motion.div

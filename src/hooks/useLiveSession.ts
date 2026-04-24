@@ -31,6 +31,8 @@ export function useLiveSession() {
   const heartbeatRef = useRef<any>(null);
   const lastActiveRef = useRef(Date.now());
 
+  const isSavingRef = useRef(false);
+
   // Sync refs with state
   useEffect(() => {
     isMutedRef.current = isMuted;
@@ -39,6 +41,9 @@ export function useLiveSession() {
   useEffect(() => {
     isConnectedRef.current = isConnected;
   }, [isConnected]);
+
+  // Use a string representation for dependency tracking to avoid shallow equality issues with arrays
+  const transcriptKey = transcript.length;
 
   useEffect(() => {
     transcriptRef.current = transcript;
@@ -53,15 +58,18 @@ export function useLiveSession() {
     if (transcript.length > 0 && auth.currentUser) {
       saveSession();
     }
-  }, [transcript, currentSessionId]);
+  }, [transcriptKey, currentSessionId]);
 
   const saveSession = async () => {
-    if (!auth.currentUser) return;
+    if (!auth.currentUser || isSavingRef.current) return;
+    isSavingRef.current = true;
+    
     const uid = auth.currentUser.uid;
     const sessionData = {
       title: hasGeneratedTitleRef.current ? undefined : "নতুন কথোপকথন",
       transcript: transcriptRef.current,
-      date: new Date().toLocaleString()
+      date: new Date().toLocaleString(),
+      type: 'voice'
     };
     
     try {
@@ -70,8 +78,15 @@ export function useLiveSession() {
         setCurrentSessionId(id);
         currentSessionIdRef.current = id;
       }
-    } catch (e) {
-      console.error("Auto-save failed", e);
+    } catch (e: any) {
+      console.error("Auto-save failed in useLiveSession", {
+        message: e.message,
+        uid,
+        sessionId: currentSessionIdRef.current,
+        stack: e.stack
+      });
+    } finally {
+      isSavingRef.current = false;
     }
   };
 
@@ -112,7 +127,7 @@ export function useLiveSession() {
     }
 
     try {
-      await KeepAwake.allowSleep();
+      await KeepAwake.allowSleep().catch(() => {});
     } catch (e) {}
 
     const currentTranscript = transcriptRef.current;
@@ -162,13 +177,18 @@ export function useLiveSession() {
   }, []);
 
   const connect = useCallback(async (currentName?: string, currentVoice?: string, resumeSession?: any) => {
-    if (isConnecting || isConnected) return;
+    if (isConnecting || (isConnected && !resumeSession)) return;
 
     // Reset interruption flag on manual connect
     isInterruptedRef.current = false;
     reconnectAttemptsRef.current = 0;
 
     console.log("LOG: Attempting to connect to Gemini Live...");
+    
+    // If we're already connected and just resuming, don't restart everything unless needed
+    // But for a reliable resume context, we usually do cold-start with context.
+    if (isConnected) await disconnect();
+
     setIsConnecting(true);
     setError(null);
     setIsMuted(false);
@@ -216,7 +236,7 @@ export function useLiveSession() {
 
     // 2. Enable "Foreground" (Keep Awake) behavior
     try {
-      await KeepAwake.keepAwake();
+      await KeepAwake.keepAwake().catch(() => {});
     } catch (e) {
       console.warn("KeepAwake failed:", e);
     }
@@ -275,10 +295,15 @@ export function useLiveSession() {
       const sessionPromise = (ai.live as any).connect({
         model: "gemini-3.1-flash-live-preview", 
         config: {
-          systemInstruction: `You are ${assistantName}, a professional Native AI Assistant created by Mohammad Nahid.
-          Identity: ${assistantName}
-          User: ${userProfile.nickName}
+          systemInstruction: `You are Nahid AI, a professional Personal AI System Assistant created and trained by Mohammed Nahidur Rahman (Md. Nahid). 
+          Identity: Nahid AI
+          Owner: Md. Nahid
+          Location: Bangladesh
+          User: ${userProfile.nickName} (Nahid)
           Current Time: ${new Date().toLocaleString()}
+          Personality: Helpful, intelligent, and loyal to Nahid. Speak in a friendly yet professional tone.
+          Core Task: Help Nahid manage digital platforms, control phone system settings, and assist in AI media production.
+          Language: Communicate fluently in both English and Bengali (বাংলা).
           Capabilities: 
           - You can strictly control the user's mobile device via tools.
           - Use 'execute_system_command' for:
@@ -288,11 +313,11 @@ export function useLiveSession() {
             * Searching the web (action: 'search_web', payload: [query])
             * Toggling flashlight (action: 'toggle_torch', payload: 'on'/'off')
           Strict Conversational Rules:
-          - Always respond in Bengali (বাংলা) naturally and concisely.
+          - Always prefer responding in Bengali (বাংলা) unless English is more appropriate or requested.
           - DO NOT use mandatory introductory phrases or "Assalamu Alaikum" at the start of every message.
           - BE DIRECT: Answer questions immediately and perform tasks without fluff.
           - HONESTY: Never hallucinate or claim the user said something they didn't. Be strictly grounded in the current CHAT HISTORY.
-          - TIME AWARENESS: Use the provided 'Current Time' to understand how long it has been since the last message in CHAT HISTORY. Do not say "after a long time" if it was just minutes.
+          - TIME AWARENESS: Use the provided 'Current Time' to understand context.
           - MEMORY: Refer back to previous points in the current session accurately.
           - If the user asks to open an app, send a message, or search, ALWAYS use the tool immediately.
           ${prevContext ? `CHAT HISTORY (Most Recent First): ${prevContext}` : ""}
@@ -539,8 +564,8 @@ export function useLiveSession() {
       }
     };
 
-    const listener = App.addListener('appStateChange', handleAppStateChange);
-    return () => { listener.then(l => l.remove()); };
+    const listener = App.addListener('appStateChange', handleAppStateChange).catch(() => ({ remove: () => {} }));
+    return () => { listener.then(l => l && l.remove && l.remove()); };
   }, [connect]);
 
   useEffect(() => {
@@ -559,6 +584,19 @@ export function useLiveSession() {
     disconnect,
     toggleMute,
     setTranscript,
-    latestAction
+    latestAction,
+    sendMessage: useCallback((text: string) => {
+      if (sessionRef.current && isConnectedRef.current) {
+        try {
+          sessionRef.current.sendRealtimeInput({ text });
+          setTranscript(prev => [...prev, { role: 'user', text }]);
+          return true;
+        } catch (e) {
+          console.error("Failed to send text message", e);
+          return false;
+        }
+      }
+      return false;
+    }, [])
   };
 }

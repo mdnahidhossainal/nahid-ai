@@ -23,12 +23,12 @@ service cloud.firestore {
       allow get: if isOwner(userId);
       allow create: if isOwner(userId) && isValidUser(request.resource.data);
       allow update: if isOwner(userId) && isValidUser(request.resource.data) 
-                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['userName', 'nickName', 'assistantName', 'assistantVoice', 'updatedAt']);
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['userName', 'nickName', 'assistantName', 'assistantVoice', 'wakeWord', 'isAlwaysListening', 'updatedAt']);
 
       function isValidUser(data) {
         return data.uid == request.auth.uid 
             && data.userName is string && data.userName.size() <= 100
-            && data.nickName is string && data.nickName.size() <= 50;
+            && data.nickName is string && data.nickName.size() <= 100;
       }
 
       // Sub-collections
@@ -38,17 +38,20 @@ service cloud.firestore {
         allow delete: if isOwner(userId);
 
         function isValidMemory(data) {
-          return data.userId == request.auth.uid && data.content is string && data.content.size() <= 1000;
+          return data.userId == request.auth.uid && data.content is string && data.content.size() <= 2000
+                 && (data.updatedAt == request.time || !('updatedAt' in data) || data.timestamp is string);
         }
       }
 
       match /sessions/{sessionId} {
         allow list, get: if isOwner(userId);
         allow create: if isOwner(userId) && isValidSession(request.resource.data);
+        allow update: if isOwner(userId) && isValidSession(request.resource.data);
         allow delete: if isOwner(userId);
 
         function isValidSession(data) {
-          return data.userId == request.auth.uid && data.title is string && data.title.size() <= 200;
+          return data.userId == request.auth.uid && data.title is string && data.title.size() <= 500
+                 && (data.updatedAt == request.time || !('updatedAt' in data) || !('createdAt' in data));
         }
       }
     }

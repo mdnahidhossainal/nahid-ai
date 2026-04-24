@@ -263,6 +263,19 @@ export function useLiveSessionNative() {
     connect,
     disconnect,
     sendMessageOffline,
-    setTranscript
+    setTranscript,
+    sendMessageOnline: useCallback((text: string) => {
+      if (sessionRef.current && isConnected) {
+        try {
+          sessionRef.current.sendRealtimeInput({ text });
+          setTranscript(prev => [...prev, { role: 'user', text }]);
+          return true;
+        } catch (e) {
+          console.error("Failed to send online text message", e);
+          return false;
+        }
+      }
+      return false;
+    }, [isConnected])
   };
 }
