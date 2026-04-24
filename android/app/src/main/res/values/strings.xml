@@ -4,4 +4,5 @@
     <string name="title_activity_main">Nahid AI</string>
     <string name="package_name">com.nahidai.app</string>
     <string name="custom_url_scheme">com.nahidai.app</string>
+    <string name="accessibility_description">Nahid AI can see and interact with your screen to help you navigate and control apps.</string>
 </resources>

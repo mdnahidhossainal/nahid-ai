@@ -17,6 +17,7 @@ export function useLiveSession() {
   const [error, setError] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<{ role: 'user' | 'model'; text: string }[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [latestAction, setLatestAction] = useState<{ type: string; pos?: { x: number; y: number }; timestamp: number } | null>(null);
   
   const audioStreamerRef = useRef<AudioStreamer | null>(null);
   const sessionRef = useRef<any>(null);
@@ -27,7 +28,7 @@ export function useLiveSession() {
   const currentSessionIdRef = useRef<string | null>(null);
   const hasGeneratedTitleRef = useRef(false);
   const reconnectAttemptsRef = useRef(0);
-  const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
+  const heartbeatRef = useRef<any>(null);
   const lastActiveRef = useRef(Date.now());
 
   // Sync refs with state
@@ -430,6 +431,7 @@ export function useLiveSession() {
                     }
 
                     if (handled) {
+                      setLatestAction({ type: action, timestamp: Date.now() });
                       sessionRef.current?.sendToolResponse({
                         functionResponses: [{
                           name: "execute_system_command",
@@ -556,6 +558,7 @@ export function useLiveSession() {
     connect,
     disconnect,
     toggleMute,
-    setTranscript
+    setTranscript,
+    latestAction
   };
 }

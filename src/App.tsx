@@ -49,7 +49,8 @@ export default function App() {
     disconnect,
     toggleMute,
     setTranscript,
-    currentSessionId
+    currentSessionId,
+    latestAction
   } = useLiveSession();
 
   const { t, i18n: i18nInstance } = useTranslation();
@@ -59,7 +60,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedSession, setSelectedSession] = useState<{ id: number; title: string; date: string; transcript: any[] } | null>(null);
-  const [activeTab, setActiveTab] = useState<'profile' | 'memory' | 'assistant' | 'voice' | 'permissions' | 'hybrid' | 'api' | 'language'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'memory' | 'assistant' | 'voice' | 'permissions' | 'hybrid' | 'api' | 'language' | 'agent'>('profile');
   const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem('nahid_gemini_api_key') || '');
   const [hybridEnabled, setHybridEnabled] = useState(() => localStorage.getItem('nahid_hybrid') === 'true');
   const [isOnline, setIsOnline] = useState(window.navigator.onLine);
@@ -985,9 +986,57 @@ export default function App() {
                     <Shield className="w-3.5 h-3.5" />
                     <span className="text-[9px] font-black uppercase tracking-wider">{t('nav.permissions')}</span>
                   </button>
+                  <button 
+                    onClick={() => setActiveTab('agent')}
+                    className={`flex-shrink-0 snap-center min-w-[70px] py-1.5 px-3 flex flex-col items-center justify-center gap-1 rounded-xl transition-all duration-300 ${activeTab === 'agent' ? 'bg-amber-500 shadow-md text-white scale-105' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    <span className="text-[9px] font-black uppercase tracking-wider">Agent</span>
+                  </button>
                 </div>
 
                 <div className="p-4 sm:p-6 flex-1 overflow-y-auto no-scrollbar">
+                  {activeTab === 'agent' && (
+                    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-400">
+                      <div className="p-6 bg-amber-500/10 border border-amber-500/20 rounded-[32px] space-y-4">
+                         <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                               <div className="w-10 h-10 rounded-2xl bg-amber-500/20 flex items-center justify-center">
+                                  <Zap className="w-5 h-5 text-amber-500" />
+                               </div>
+                               <div>
+                                  <h3 className="text-white font-black text-xs uppercase tracking-widest leading-none mb-1">System Agent Control</h3>
+                                  <p className="text-[9px] text-white/40 uppercase font-mono tracking-tighter">Experimental Agentic Control</p>
+                               </div>
+                            </div>
+                         </div>
+                         <p className="text-[11px] text-white/60 leading-relaxed italic">
+                           সিস্টেম এজেন্ট মোডে এআই আপনার ফোনের স্ক্রিন দেখতে পারবে এবং বিভিন্ন অ্যাপে ক্লিক বা অ্যাকশন নিতে পারবে। এটি শুধুমাত্র নেটিভ অ্যান্ড্রয়েড বিল্ডে কাজ করবে।
+                         </p>
+                      </div>
+
+                      <div className="p-6 bg-white/5 rounded-[32px] border border-white/10 space-y-4">
+                         <h4 className="text-[10px] font-black uppercase tracking-widest text-white/40">Action Feedback (Preview)</h4>
+                         <div className="flex items-center justify-between p-4 bg-black/40 rounded-2xl border border-white/5">
+                            <span className="text-[10px] text-white/60 uppercase font-bold tracking-widest">Live Action Overlay</span>
+                            <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.5)]" />
+                         </div>
+                         <p className="text-[9px] text-white/30 uppercase leading-none font-mono tracking-tighter">
+                           এআই আপনার স্ক্রিনে কোথায় ক্লিক করছে তা রিয়েল-টাইমে দেখতে পাবেন। (Red Pulse Indicator)
+                         </p>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          setToastMessage("অ্যাক্সেসিবিলিটি সেটিংস খুলুন (Native Only)");
+                          setShowToast(true);
+                        }}
+                        className="w-full py-4 bg-amber-500 text-black rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl shadow-amber-500/20 active:scale-95 transition-all"
+                      >
+                         Grant Accessibility Permission
+                      </button>
+                    </div>
+                  )}
+
                   {activeTab === 'profile' && (
                     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-3 duration-400">
                       {/* Cloud Login Card */}
@@ -1485,7 +1534,24 @@ export default function App() {
         </main>
 
         {/* Global Control Bar */}
-        <footer className="p-2 sm:p-4 flex flex-col items-center gap-3 bg-gradient-to-t from-black/80 to-transparent">
+        {latestAction && (
+        <motion.div 
+          key={latestAction.timestamp}
+          initial={{ scale: 0, opacity: 0 }}
+          animate={{ scale: [1, 2], opacity: [1, 0] }}
+          transition={{ duration: 0.8 }}
+          className="fixed pointer-events-none z-[1000] w-12 h-12 bg-red-500/40 border-2 border-red-500 rounded-full flex items-center justify-center"
+          style={{ 
+            left: latestAction.pos?.x || '50%', 
+            top: latestAction.pos?.y || '50%',
+            transform: 'translate(-50%, -50%)'
+          }}
+        >
+          <div className="w-2 h-2 bg-red-500 rounded-full" />
+        </motion.div>
+      )}
+
+      <footer className="p-2 sm:p-4 flex flex-col items-center gap-3 bg-gradient-to-t from-black/80 to-transparent">
           <div className="w-full max-w-[240px] flex items-center gap-2">
             {/* New Location for Mute Toggle */}
             <AnimatePresence>

@@ -1,5 +1,7 @@
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
+const cacheDir = (FileSystem as any).cacheDirectory;
+const encodingBase64 = (FileSystem as any).EncodingType?.Base64;
 import { Buffer } from 'buffer';
 
 export class NativeAudioStreamer {
@@ -21,7 +23,6 @@ export class NativeAudioStreamer {
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
         staysActiveInBackground: true,
-        shouldRouteThroughEarpieceIOS: false,
       });
 
       this.recording = new Audio.Recording();
@@ -75,8 +76,8 @@ export class NativeAudioStreamer {
     // In Expo, playing raw PCM chunks in real-time requires a buffer-to-file or specialized bridge.
     // We will use a Buffer mechanism to play the response from Gemini.
     try {
-        const fileUri = `${FileSystem.cacheDirectory}chunk_${Date.now()}.wav`;
-        await FileSystem.writeAsStringAsync(fileUri, base64Data, { encoding: FileSystem.EncodingType.Base64 });
+        const fileUri = `${cacheDir}chunk_${Date.now()}.wav`;
+        await FileSystem.writeAsStringAsync(fileUri, base64Data, { encoding: encodingBase64 });
         
         const { sound } = await Audio.Sound.createAsync({ uri: fileUri });
         this.sound = sound;
